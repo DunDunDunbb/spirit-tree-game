@@ -172,6 +172,21 @@ class Profile {
     return Math.round(16 + (item.enhanceLevel || 0) * 14 + item.power * 0.035);
   }
 
+  getEnhanceChance(slot) {
+    const item = this.getEquipped(slot);
+    if (!item) return 0;
+    const level = item.enhanceLevel || 0;
+    if (level >= 15) return 0;
+    const rarityPenalty = {
+      common: 0,
+      rare: 3,
+      epic: 6,
+      legend: 10
+    }[item.rarity] || 0;
+    const chance = 95 - level * 4 - Math.floor(level / 3) * 4 - rarityPenalty;
+    return Math.max(28, Math.min(95, chance));
+  }
+
   enhanceEquipment(slot) {
     const item = this.getEquipped(slot);
     if (!item) return { ok: false, reason: "missing" };
@@ -179,9 +194,12 @@ class Profile {
     if (level >= 15) return { ok: false, reason: "max", item };
     const cost = this.getEnhanceCost(slot);
     if (this.coins < cost) return { ok: false, reason: "coins", cost, item };
-    this.coins -= cost;
-    item.enhanceLevel = level + 1;
-    return { ok: true, cost, item };
+    const chance = this.getEnhanceChance(slot);
+    const success = Math.random() * 100 < chance;
+    const paid = success ? cost : Math.max(1, Math.round(cost * 0.4));
+    this.coins -= paid;
+    if (success) item.enhanceLevel = level + 1;
+    return { ok: success, reason: success ? "success" : "failed", cost, paid, chance, item };
   }
 
   recordPvpResult(victory) {

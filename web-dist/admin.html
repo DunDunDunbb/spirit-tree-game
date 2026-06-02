@@ -1,0 +1,369 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>乌干达修仙后台</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        color: #f8edd6;
+        background: #101923;
+        font: 14px/1.5 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      header {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        justify-content: space-between;
+        padding: 18px 22px;
+        border-bottom: 1px solid rgba(255, 231, 163, 0.16);
+        background: #172433;
+      }
+
+      h1 {
+        margin: 0;
+        color: #ffe08a;
+        font-size: 22px;
+      }
+
+      main {
+        padding: 20px;
+      }
+
+      input,
+      select,
+      button {
+        border-radius: 7px;
+        font: inherit;
+      }
+
+      input,
+      select {
+        width: 100%;
+        min-width: 86px;
+        padding: 8px 9px;
+        border: 1px solid rgba(255, 231, 163, 0.25);
+        color: #fff8dd;
+        background: #0d1722;
+      }
+
+      button {
+        cursor: pointer;
+        padding: 8px 11px;
+        border: 1px solid rgba(255, 231, 163, 0.35);
+        color: #fff8dd;
+        background: #31526f;
+        font-weight: 700;
+      }
+
+      button.warn {
+        background: #8a3f3f;
+      }
+
+      button.good {
+        background: #327653;
+      }
+
+      .panel {
+        max-width: 520px;
+        margin: 48px auto;
+        padding: 22px;
+        border: 1px solid rgba(255, 231, 163, 0.18);
+        border-radius: 14px;
+        background: #172433;
+      }
+
+      .toolbar {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        align-items: center;
+        margin-bottom: 16px;
+      }
+
+      .toolbar input {
+        width: min(360px, 100%);
+      }
+
+      .message {
+        min-height: 22px;
+        color: #ffcb9d;
+      }
+
+      .table-wrap {
+        overflow-x: auto;
+        border: 1px solid rgba(255, 231, 163, 0.14);
+        border-radius: 12px;
+        background: #121d29;
+      }
+
+      table {
+        width: 100%;
+        min-width: 1040px;
+        border-collapse: collapse;
+      }
+
+      th,
+      td {
+        padding: 9px;
+        border-bottom: 1px solid rgba(255, 231, 163, 0.1);
+        text-align: left;
+        vertical-align: middle;
+      }
+
+      th {
+        color: #ffe08a;
+        background: #1b2a3a;
+        font-size: 12px;
+        white-space: nowrap;
+      }
+
+      td.actions {
+        display: flex;
+        gap: 7px;
+        min-width: 210px;
+      }
+
+      .hidden {
+        display: none;
+      }
+
+      .small {
+        color: #bfcde0;
+        font-size: 12px;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>玩家数据后台</h1>
+      <button id="logout-button" class="warn" type="button">退出后台</button>
+    </header>
+
+    <main>
+      <section id="login-panel" class="panel">
+        <h2>后台登录</h2>
+        <p class="small">密码来自 Render 环境变量 <code>UGANDA_ADMIN_PASSWORD</code>。如果服务端没有设置，后台 API 会拒绝访问。</p>
+        <input id="admin-password" type="password" placeholder="后台密码">
+        <p><button id="login-button" class="good" type="button">进入后台</button></p>
+        <div id="login-message" class="message"></div>
+      </section>
+
+      <section id="admin-panel" class="hidden">
+        <div class="toolbar">
+          <button id="refresh-button" class="good" type="button">刷新玩家</button>
+          <input id="filter-input" placeholder="搜索账号或昵称">
+          <span id="summary" class="small"></span>
+        </div>
+        <div id="admin-message" class="message"></div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>账号</th>
+                <th>昵称</th>
+                <th>积分</th>
+                <th>胜</th>
+                <th>负</th>
+                <th>头像</th>
+                <th>颜色</th>
+                <th>新密码</th>
+                <th>更新时间</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody id="users-body"></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+
+    <script>
+      const passwordInput = document.getElementById("admin-password");
+      const loginPanel = document.getElementById("login-panel");
+      const adminPanel = document.getElementById("admin-panel");
+      const loginMessage = document.getElementById("login-message");
+      const adminMessage = document.getElementById("admin-message");
+      const usersBody = document.getElementById("users-body");
+      const filterInput = document.getElementById("filter-input");
+      const summary = document.getElementById("summary");
+      const sprites = [
+        "hero-main-character",
+        "hero-skin-streetwear",
+        "hero-skin-wuxia",
+        "hero-skin-royal",
+        "hero-skin-bunny",
+        "hero-skin-nurse",
+        "hero-skin-bocchi-shirt"
+      ];
+      let users = [];
+
+      function getPassword() {
+        return sessionStorage.getItem("uganda-admin-password") || "";
+      }
+
+      function setMessage(target, text, ok = false) {
+        target.textContent = text || "";
+        target.style.color = ok ? "#9be36d" : "#ffcb9d";
+      }
+
+      async function api(path, options = {}) {
+        const response = await fetch(path, {
+          ...options,
+          headers: {
+            "Content-Type": "application/json",
+            "X-Admin-Password": getPassword(),
+            ...(options.headers || {})
+          }
+        });
+        const result = await response.json();
+        if (!response.ok || !result.ok) throw new Error(result.error || "请求失败");
+        return result;
+      }
+
+      function showAdmin() {
+        loginPanel.classList.add("hidden");
+        adminPanel.classList.remove("hidden");
+      }
+
+      function escapeHtml(value) {
+        return String(value || "").replace(/[&<>"']/g, (character) => ({
+          "&": "&amp;",
+          "<": "&lt;",
+          ">": "&gt;",
+          '"': "&quot;",
+          "'": "&#39;"
+        }[character]));
+      }
+
+      function optionList(selected) {
+        return sprites.map((sprite) => `<option value="${sprite}" ${sprite === selected ? "selected" : ""}>${sprite}</option>`).join("");
+      }
+
+      function renderUsers() {
+        const keyword = filterInput.value.trim().toLowerCase();
+        const visible = users.filter((user) => {
+          return !keyword
+            || user.username.toLowerCase().includes(keyword)
+            || String(user.displayName || "").toLowerCase().includes(keyword);
+        });
+        summary.textContent = `共 ${users.length} 个账号，显示 ${visible.length} 个`;
+        usersBody.innerHTML = visible.map((user) => `
+          <tr data-username="${escapeHtml(user.username)}">
+            <td><strong>${escapeHtml(user.username)}</strong></td>
+            <td><input data-field="displayName" maxlength="8" value="${escapeHtml(user.displayName || "")}"></td>
+            <td><input data-field="rankScore" type="number" min="0" max="10000000" value="${user.rankScore}"></td>
+            <td><input data-field="pvpWins" type="number" min="0" max="1000000" value="${user.pvpWins}"></td>
+            <td><input data-field="pvpLosses" type="number" min="0" max="1000000" value="${user.pvpLosses}"></td>
+            <td><select data-field="avatarSprite">${optionList(user.avatarSprite)}</select></td>
+            <td><input data-field="avatarColor" value="${escapeHtml(user.avatarColor || "#f1bf62")}"></td>
+            <td><input data-field="password" type="password" placeholder="留空不改"></td>
+            <td class="small">${escapeHtml(user.updatedAt || "")}</td>
+            <td class="actions">
+              <button data-action="save" class="good" type="button">保存</button>
+              <button data-action="reset" type="button">改密</button>
+              <button data-action="delete" class="warn" type="button">删除</button>
+            </td>
+          </tr>
+        `).join("");
+      }
+
+      async function refreshUsers() {
+        setMessage(adminMessage, "正在读取玩家...");
+        const result = await api("/api/admin/users");
+        users = result.users || [];
+        renderUsers();
+        setMessage(adminMessage, "已刷新", true);
+      }
+
+      function rowPayload(row) {
+        const payload = { username: row.dataset.username };
+        row.querySelectorAll("[data-field]").forEach((input) => {
+          if (input.dataset.field !== "password") payload[input.dataset.field] = input.value;
+        });
+        return payload;
+      }
+
+      async function saveRow(row) {
+        const result = await api("/api/admin/users/update", {
+          method: "POST",
+          body: JSON.stringify(rowPayload(row))
+        });
+        users = users.map((user) => user.username === result.user.username ? result.user : user);
+        renderUsers();
+        setMessage(adminMessage, `已保存 ${result.user.username}`, true);
+      }
+
+      async function resetPassword(row) {
+        const username = row.dataset.username;
+        const password = row.querySelector('[data-field="password"]').value;
+        if (!password) {
+          setMessage(adminMessage, "请输入新密码");
+          return;
+        }
+        await api("/api/admin/users/reset-password", {
+          method: "POST",
+          body: JSON.stringify({ username, password })
+        });
+        row.querySelector('[data-field="password"]').value = "";
+        setMessage(adminMessage, `已重置 ${username} 的密码`, true);
+      }
+
+      async function deleteUser(row) {
+        const username = row.dataset.username;
+        if (!confirm(`确定删除账号 ${username}？此操作不可撤销。`)) return;
+        await api("/api/admin/users/delete", {
+          method: "POST",
+          body: JSON.stringify({ username })
+        });
+        users = users.filter((user) => user.username !== username);
+        renderUsers();
+        setMessage(adminMessage, `已删除 ${username}`, true);
+      }
+
+      document.getElementById("login-button").addEventListener("click", async () => {
+        sessionStorage.setItem("uganda-admin-password", passwordInput.value);
+        try {
+          showAdmin();
+          await refreshUsers();
+        } catch (error) {
+          sessionStorage.removeItem("uganda-admin-password");
+          adminPanel.classList.add("hidden");
+          loginPanel.classList.remove("hidden");
+          setMessage(loginMessage, error.message);
+        }
+      });
+
+      document.getElementById("logout-button").addEventListener("click", () => {
+        sessionStorage.removeItem("uganda-admin-password");
+        location.reload();
+      });
+
+      document.getElementById("refresh-button").addEventListener("click", () => {
+        refreshUsers().catch((error) => setMessage(adminMessage, error.message));
+      });
+
+      filterInput.addEventListener("input", renderUsers);
+
+      usersBody.addEventListener("click", (event) => {
+        const button = event.target.closest("button[data-action]");
+        if (!button) return;
+        const row = button.closest("tr");
+        const action = button.dataset.action;
+        const task = action === "save" ? saveRow(row) : action === "reset" ? resetPassword(row) : deleteUser(row);
+        task.catch((error) => setMessage(adminMessage, error.message));
+      });
+
+      if (getPassword()) {
+        showAdmin();
+        refreshUsers().catch((error) => setMessage(adminMessage, error.message));
+      }
+    </script>
+  </body>
+</html>

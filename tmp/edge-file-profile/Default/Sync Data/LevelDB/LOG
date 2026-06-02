@@ -1,2 +1,3 @@
-2026/06/02-20:46:10.765 e060 Creating DB D:\codex\wechat-roguelike\tmp\edge-file-profile\Default\Sync Data\LevelDB since it was missing.
-2026/06/02-20:46:10.799 e060 Reusing MANIFEST D:\codex\wechat-roguelike\tmp\edge-file-profile\Default\Sync Data\LevelDB/MANIFEST-000001
+2026/06/03-00:27:52.634 83d8 Reusing MANIFEST D:\codex\wechat-roguelike\tmp\edge-file-profile\Default\Sync Data\LevelDB/MANIFEST-000001
+2026/06/03-00:27:52.642 83d8 Recovering log #3
+2026/06/03-00:27:52.643 83d8 Reusing old log D:\codex\wechat-roguelike\tmp\edge-file-profile\Default\Sync Data\LevelDB/000003.log 

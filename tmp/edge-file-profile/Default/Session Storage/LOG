@@ -1,2 +1,3 @@
-2026/06/02-20:46:10.926 b514 Creating DB D:\codex\wechat-roguelike\tmp\edge-file-profile\Default\Session Storage since it was missing.
-2026/06/02-20:46:11.027 b514 Reusing MANIFEST D:\codex\wechat-roguelike\tmp\edge-file-profile\Default\Session Storage/MANIFEST-000001
+2026/06/03-00:27:52.829 e7b8 Reusing MANIFEST D:\codex\wechat-roguelike\tmp\edge-file-profile\Default\Session Storage/MANIFEST-000001
+2026/06/03-00:27:52.846 e7b8 Recovering log #3
+2026/06/03-00:27:52.861 e7b8 Reusing old log D:\codex\wechat-roguelike\tmp\edge-file-profile\Default\Session Storage/000003.log 
