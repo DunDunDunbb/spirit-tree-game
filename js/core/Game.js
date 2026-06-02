@@ -25,7 +25,12 @@ const GAME_STATE = {
 const STORAGE_KEY = "spirit-tree-profile-v1";
 const ENEMIES = [
   { type: "imp", name: "赤角小妖", hp: 84, atk: 12, spd: 42 },
+  { type: "bamboo-scout", name: "竹林狸妖", hp: 92, atk: 13, spd: 47 },
+  { type: "stone-beast", name: "岩甲兽", hp: 136, atk: 15, spd: 29 },
+  { type: "vine-spirit", name: "毒藤精", hp: 108, atk: 15, spd: 35 },
   { type: "brute", name: "山林妖将", hp: 122, atk: 16, spd: 31 },
+  { type: "frostwing", name: "霜羽妖", hp: 98, atk: 18, spd: 49 },
+  { type: "moon-assassin", name: "月影刺客", hp: 86, atk: 21, spd: 58 },
   { type: "wisp", name: "幽火灵使", hp: 98, atk: 14, spd: 38 }
 ];
 
