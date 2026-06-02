@@ -92,6 +92,7 @@ function copyDirectory(relativePath) {
 
 [
   "index.html",
+  "admin.html",
   "web-game.bundle.js",
   "web/wx-shim.js",
   "assets/images/background.jpg",
