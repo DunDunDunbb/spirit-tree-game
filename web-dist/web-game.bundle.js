@@ -2737,7 +2737,7 @@ class UI {
     ctx.font = "12px sans-serif";
     ctx.textAlign = "center";
     ctx.fillText(status || "本地演示匹配", this.width / 2, modal.y + 74);
-    opponents.forEach((entry, index) => {
+    opponents.slice(0, modal.rows.length).forEach((entry, index) => {
       const rect = modal.rows[index];
       this.fillPanel(rect, "rgba(91, 73, 57, 0.09)", 7);
       ctx.textAlign = "left";

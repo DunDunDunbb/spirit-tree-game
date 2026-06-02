@@ -246,7 +246,7 @@ class UgandaHandler(SimpleHTTPRequestHandler):
                         FROM users
                         WHERE id != ?
                         ORDER BY updated_at DESC, rank_score DESC
-                        LIMIT 8
+                        LIMIT 4
                         """,
                         (current["id"],),
                     ).fetchall()
