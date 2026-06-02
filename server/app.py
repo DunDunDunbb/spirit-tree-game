@@ -24,6 +24,7 @@ PID_FILE = ROOT / "tmp" / "dev-server.pid"
 TOKEN_DAYS = 30
 TEST_USERNAME = "tester_max"
 TEST_PASSWORD = "UgandaTest888"
+ADMIN_PASSWORD = os.environ.get("UGANDA_ADMIN_PASSWORD", "")
 
 
 def utc_now() -> datetime:
@@ -47,6 +48,8 @@ def open_database() -> sqlite3.Connection:
           password_salt TEXT NOT NULL,
           password_hash TEXT NOT NULL,
           display_name TEXT NOT NULL,
+          avatar_sprite TEXT NOT NULL DEFAULT 'hero-main-character',
+          avatar_color TEXT NOT NULL DEFAULT '#f1bf62',
           rank_score INTEGER NOT NULL DEFAULT 1000,
           pvp_wins INTEGER NOT NULL DEFAULT 0,
           pvp_losses INTEGER NOT NULL DEFAULT 0,
@@ -63,8 +66,18 @@ def open_database() -> sqlite3.Connection:
         CREATE INDEX IF NOT EXISTS leaderboard_score ON users(rank_score DESC, updated_at ASC);
         """
     )
+    ensure_user_columns(connection)
     ensure_test_account(connection)
     return connection
+
+
+def ensure_user_columns(connection: sqlite3.Connection) -> None:
+    columns = {row["name"] for row in connection.execute("PRAGMA table_info(users)").fetchall()}
+    if "avatar_sprite" not in columns:
+        connection.execute("ALTER TABLE users ADD COLUMN avatar_sprite TEXT NOT NULL DEFAULT 'hero-main-character'")
+    if "avatar_color" not in columns:
+        connection.execute("ALTER TABLE users ADD COLUMN avatar_color TEXT NOT NULL DEFAULT '#f1bf62'")
+    connection.commit()
 
 
 def ensure_test_account(connection: sqlite3.Connection) -> None:
@@ -111,10 +124,54 @@ def public_user(row: sqlite3.Row) -> dict[str, object]:
     return {
         "username": row["username"],
         "displayName": row["display_name"],
+        "avatarSprite": row["avatar_sprite"],
+        "avatarColor": row["avatar_color"],
         "rankScore": row["rank_score"],
         "pvpWins": row["pvp_wins"],
         "pvpLosses": row["pvp_losses"],
     }
+
+
+def admin_user(row: sqlite3.Row) -> dict[str, object]:
+    return {
+        **public_user(row),
+        "createdAt": row["created_at"],
+        "updatedAt": row["updated_at"],
+    }
+
+
+def normalize_display_name(value: object, fallback: str = "") -> str:
+    display_name = str(value or "").strip()[:8]
+    return display_name or fallback
+
+
+def clamp_int(value: object, minimum: int, maximum: int, fallback: int) -> int:
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        number = fallback
+    return max(minimum, min(maximum, number))
+
+
+def normalize_avatar_sprite(value: object) -> str:
+    sprite = str(value or "hero-main-character").strip()
+    allowed = {
+        "hero-main-character",
+        "hero-skin-streetwear",
+        "hero-skin-wuxia",
+        "hero-skin-royal",
+        "hero-skin-bunny",
+        "hero-skin-nurse",
+        "hero-skin-bocchi-shirt",
+    }
+    return sprite if sprite in allowed else "hero-main-character"
+
+
+def normalize_avatar_color(value: object) -> str:
+    color = str(value or "#f1bf62").strip()
+    if len(color) == 7 and color.startswith("#") and all(character in "0123456789abcdefABCDEF" for character in color[1:]):
+        return color
+    return "#f1bf62"
 
 
 def pvp_realm(score: int) -> str:
@@ -137,8 +194,12 @@ def pvp_opponent(row: sqlite3.Row, index: int) -> dict[str, object]:
     return {
         "username": row["username"],
         "name": row["display_name"],
+        "avatarSprite": row["avatar_sprite"],
+        "avatarColor": row["avatar_color"],
         "realm": pvp_realm(score),
         "power": power,
+        "wins": wins,
+        "losses": losses,
         "hp": max(320, min(5000, 260 + power // 4)),
         "atk": max(36, min(420, 28 + power // 90)),
         "spd": max(110, min(220, 118 + wins * 2 - losses)),
@@ -178,6 +239,13 @@ class UgandaHandler(SimpleHTTPRequestHandler):
             raise PermissionError("请先登录")
         return authorization[7:].strip()
 
+    def require_admin(self) -> None:
+        if not ADMIN_PASSWORD:
+            raise PermissionError("后台未启用：请先设置 UGANDA_ADMIN_PASSWORD")
+        password = self.headers.get("X-Admin-Password", "")
+        if not hmac.compare_digest(password, ADMIN_PASSWORD):
+            raise PermissionError("后台密码错误")
+
     def current_user(self, connection: sqlite3.Connection) -> sqlite3.Row:
         token = self.bearer_token()
         now = iso_time(utc_now())
@@ -213,6 +281,17 @@ class UgandaHandler(SimpleHTTPRequestHandler):
             with closing(open_database()) as connection:
                 if path == "/api/health":
                     return self.send_json(HTTPStatus.OK, {"ok": True})
+                if path == "/api/admin/users":
+                    self.require_admin()
+                    rows = connection.execute(
+                        """
+                        SELECT username, display_name, avatar_sprite, avatar_color, rank_score, pvp_wins, pvp_losses, created_at, updated_at
+                        FROM users
+                        ORDER BY updated_at DESC, username ASC
+                        LIMIT 200
+                        """
+                    ).fetchall()
+                    return self.send_json(HTTPStatus.OK, {"ok": True, "users": [admin_user(row) for row in rows]})
                 if path == "/api/auth/me":
                     user = self.current_user(connection)
                     return self.send_json(HTTPStatus.OK, {"ok": True, "user": public_user(user)})
@@ -220,7 +299,7 @@ class UgandaHandler(SimpleHTTPRequestHandler):
                     current = self.current_user(connection)
                     rows = connection.execute(
                         """
-                        SELECT username, display_name, rank_score, pvp_wins, pvp_losses
+                        SELECT username, display_name, avatar_sprite, avatar_color, rank_score, pvp_wins, pvp_losses
                         FROM users
                         ORDER BY rank_score DESC, updated_at ASC
                         LIMIT 50
@@ -230,6 +309,8 @@ class UgandaHandler(SimpleHTTPRequestHandler):
                         {
                             "username": row["username"],
                             "name": row["display_name"],
+                            "avatarSprite": row["avatar_sprite"],
+                            "avatarColor": row["avatar_color"],
                             "score": row["rank_score"],
                             "wins": row["pvp_wins"],
                             "losses": row["pvp_losses"],
@@ -242,7 +323,7 @@ class UgandaHandler(SimpleHTTPRequestHandler):
                     current = self.current_user(connection)
                     rows = connection.execute(
                         """
-                        SELECT username, display_name, rank_score, pvp_wins, pvp_losses
+                        SELECT username, display_name, avatar_sprite, avatar_color, rank_score, pvp_wins, pvp_losses
                         FROM users
                         WHERE id != ?
                         ORDER BY updated_at DESC, rank_score DESC
@@ -263,6 +344,54 @@ class UgandaHandler(SimpleHTTPRequestHandler):
         try:
             payload = self.read_json()
             with closing(open_database()) as connection:
+                if path == "/api/admin/users/update":
+                    self.require_admin()
+                    username = normalize_username(payload.get("username"))
+                    user = connection.execute("SELECT * FROM users WHERE username = ?", (username,)).fetchone()
+                    if not user:
+                        return self.send_json(HTTPStatus.NOT_FOUND, {"ok": False, "error": "玩家不存在"})
+                    display_name = normalize_display_name(payload.get("displayName"), user["display_name"])
+                    avatar_sprite = normalize_avatar_sprite(payload.get("avatarSprite", user["avatar_sprite"]))
+                    avatar_color = normalize_avatar_color(payload.get("avatarColor", user["avatar_color"]))
+                    score = clamp_int(payload.get("rankScore"), 0, 10_000_000, int(user["rank_score"]))
+                    wins = clamp_int(payload.get("pvpWins"), 0, 1_000_000, int(user["pvp_wins"]))
+                    losses = clamp_int(payload.get("pvpLosses"), 0, 1_000_000, int(user["pvp_losses"]))
+                    connection.execute(
+                        """
+                        UPDATE users
+                        SET display_name = ?, avatar_sprite = ?, avatar_color = ?, rank_score = ?, pvp_wins = ?, pvp_losses = ?, updated_at = ?
+                        WHERE username = ?
+                        """,
+                        (display_name, avatar_sprite, avatar_color, score, wins, losses, iso_time(utc_now()), username),
+                    )
+                    connection.commit()
+                    updated = connection.execute("SELECT * FROM users WHERE username = ?", (username,)).fetchone()
+                    return self.send_json(HTTPStatus.OK, {"ok": True, "user": admin_user(updated)})
+                if path == "/api/admin/users/reset-password":
+                    self.require_admin()
+                    username = normalize_username(payload.get("username"))
+                    password = validate_password(payload.get("password"))
+                    user = connection.execute("SELECT id FROM users WHERE username = ?", (username,)).fetchone()
+                    if not user:
+                        return self.send_json(HTTPStatus.NOT_FOUND, {"ok": False, "error": "玩家不存在"})
+                    salt = secrets.token_hex(16)
+                    connection.execute(
+                        "UPDATE users SET password_salt = ?, password_hash = ?, updated_at = ? WHERE username = ?",
+                        (salt, hash_password(password, salt), iso_time(utc_now()), username),
+                    )
+                    connection.execute("DELETE FROM sessions WHERE user_id = ?", (user["id"],))
+                    connection.commit()
+                    return self.send_json(HTTPStatus.OK, {"ok": True})
+                if path == "/api/admin/users/delete":
+                    self.require_admin()
+                    username = normalize_username(payload.get("username"))
+                    if username == TEST_USERNAME:
+                        return self.send_json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": "测试账号不能删除"})
+                    cursor = connection.execute("DELETE FROM users WHERE username = ?", (username,))
+                    connection.commit()
+                    if cursor.rowcount <= 0:
+                        return self.send_json(HTTPStatus.NOT_FOUND, {"ok": False, "error": "玩家不存在"})
+                    return self.send_json(HTTPStatus.OK, {"ok": True})
                 if path == "/api/auth/register":
                     username = normalize_username(payload.get("username"))
                     password = validate_password(payload.get("password"))
@@ -297,13 +426,15 @@ class UgandaHandler(SimpleHTTPRequestHandler):
                     wins = max(0, min(1_000_000, int(payload.get("pvpWins", user["pvp_wins"]))))
                     losses = max(0, min(1_000_000, int(payload.get("pvpLosses", user["pvp_losses"]))))
                     display_name = str(payload.get("displayName") or user["display_name"]).strip()[:8] or user["display_name"]
+                    avatar_sprite = normalize_avatar_sprite(payload.get("avatarSprite"))
+                    avatar_color = normalize_avatar_color(payload.get("avatarColor"))
                     connection.execute(
                         """
                         UPDATE users
-                        SET display_name = ?, rank_score = ?, pvp_wins = ?, pvp_losses = ?, updated_at = ?
+                        SET display_name = ?, avatar_sprite = ?, avatar_color = ?, rank_score = ?, pvp_wins = ?, pvp_losses = ?, updated_at = ?
                         WHERE id = ?
                         """,
-                        (display_name, score, wins, losses, iso_time(utc_now()), user["id"]),
+                        (display_name, avatar_sprite, avatar_color, score, wins, losses, iso_time(utc_now()), user["id"]),
                     )
                     connection.commit()
                     return self.send_json(HTTPStatus.OK, {"ok": True})

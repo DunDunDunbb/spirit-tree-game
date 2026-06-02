@@ -326,6 +326,32 @@
           announcementScreen.hidden = false;
         }
 
+        function getProfileKey(account) {
+          return `uganda-profile-v1:${account || localStorage.getItem(accountKey) || "guest"}`;
+        }
+
+        function getAccountUserKey(account) {
+          return `uganda-account-user:${account}`;
+        }
+
+        function rememberAccountUser(user) {
+          if (!user || !user.username) return;
+          localStorage.setItem(getAccountUserKey(user.username), JSON.stringify(user));
+          const displayName = String(user.displayName || "").trim().slice(0, 8);
+          if (!displayName) return;
+          const profileKey = getProfileKey(user.username);
+          let profile = {};
+          try {
+            profile = JSON.parse(localStorage.getItem(profileKey) || "{}") || {};
+          } catch (error) {
+            profile = {};
+          }
+          if (profile.characterName !== displayName) {
+            profile.characterName = displayName;
+            localStorage.setItem(profileKey, JSON.stringify(profile));
+          }
+        }
+
         async function authenticate(endpoint) {
           const account = accountInput.value.trim().slice(0, 16);
           const password = passwordInput.value.trim();
@@ -346,6 +372,7 @@
           if (!response.ok || !result.ok) throw new Error(result.error || "请求失败");
           localStorage.setItem(accountKey, result.user.username);
           localStorage.setItem(tokenKey, result.token);
+          rememberAccountUser(result.user);
           location.reload();
         }
 
@@ -366,7 +393,8 @@
             const result = await response.json();
             if (!response.ok || !result.ok) throw new Error(result.error || "登录已过期");
             localStorage.setItem(accountKey, result.user.username);
-            accountName.textContent = result.user.username;
+            rememberAccountUser(result.user);
+            accountName.textContent = result.user.displayName ? `${result.user.username} · ${result.user.displayName}` : result.user.username;
             loginScreen.hidden = true;
             showAnnouncement();
           } catch (error) {

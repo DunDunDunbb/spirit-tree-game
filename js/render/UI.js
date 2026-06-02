@@ -335,7 +335,8 @@ class UI {
   drawHero(profile, elapsed = 0, homeAction = 0) {
     const ctx = this.ctx;
     const skin = profile.getEquippedCosmetics().find((item) => item.type === "skin");
-    const image = this.assets.get(skin ? skin.sprite : profile.character.sprite);
+    const sprite = skin ? skin.sprite : profile.character.sprite;
+    const image = this.assets.get(sprite);
     if (!image) return;
     const height = this.clamp(this.width * 0.43, 140, 190);
     const width = height * image.width / image.height;
@@ -348,6 +349,7 @@ class UI {
     const swing = homeAction > 0 ? Math.sin(actionProgress * Math.PI) : 0;
     const heroX = this.layout.edge + 6 + swing * 36 + idleSway;
     const heroY = this.layout.treeInfo.y - height + 13 + bob;
+    const weapon = this.getCharacterWeaponPreset(sprite, profile.getEquipped("weapon"));
     ctx.save();
     ctx.shadowColor = "rgba(3, 10, 20, 0.42)";
     ctx.shadowBlur = 8;
@@ -362,6 +364,178 @@ class UI {
     if (homeAction > 0) {
       this.drawHomeSwing(swing, actionProgress, heroX + width * 0.88, heroY + height * 0.44);
     }
+    this.drawHeldWeaponAt(heroX + width * weapon.homeX, heroY + height * weapon.homeY, height, weapon, {
+      elapsed,
+      action: swing,
+      angle: weapon.homeAngle - swing * 0.55
+    });
+  }
+
+  getCharacterWeaponPreset(sprite, equippedWeapon = null, fallbackColor = "") {
+    const presets = {
+      "hero-main-character": { style: "sword", color: "#d8ecff", accent: "#ffe08a", homeX: 0.72, homeY: 0.57, battleX: 0.7, battleY: 0.6, homeAngle: -0.62, battleAngle: -0.72, scale: 1 },
+      "hero-skin-streetwear": { style: "blade", color: "#f7f7f7", accent: "#54f0ff", homeX: 0.74, homeY: 0.6, battleX: 0.72, battleY: 0.62, homeAngle: -0.78, battleAngle: -0.82, scale: 0.9 },
+      "hero-skin-wuxia": { style: "sword", color: "#bfefff", accent: "#78c9ff", homeX: 0.73, homeY: 0.56, battleX: 0.72, battleY: 0.58, homeAngle: -0.68, battleAngle: -0.78, scale: 1.08 },
+      "hero-skin-royal": { style: "spear", color: "#ffe6a3", accent: "#ffbd45", homeX: 0.71, homeY: 0.61, battleX: 0.7, battleY: 0.63, homeAngle: -0.42, battleAngle: -0.5, scale: 1.12 },
+      "hero-skin-bunny": { style: "bow", color: "#eecbff", accent: "#ffeb8a", homeX: 0.69, homeY: 0.58, battleX: 0.68, battleY: 0.61, homeAngle: -0.48, battleAngle: -0.58, scale: 0.98 },
+      "hero-skin-nurse": { style: "staff", color: "#fff4f6", accent: "#ff8fa3", homeX: 0.68, homeY: 0.6, battleX: 0.68, battleY: 0.62, homeAngle: -0.38, battleAngle: -0.48, scale: 0.95 },
+      "hero-skin-bocchi-shirt": { style: "guitar", color: "#ff9bc3", accent: "#ffe17a", homeX: 0.68, homeY: 0.62, battleX: 0.67, battleY: 0.64, homeAngle: -0.58, battleAngle: -0.66, scale: 0.92 }
+    };
+    const base = presets[sprite] || presets["hero-main-character"];
+    return {
+      ...base,
+      color: (equippedWeapon && equippedWeapon.color) || fallbackColor || base.color,
+      accent: (equippedWeapon && equippedWeapon.setColor) || base.accent,
+      rarity: equippedWeapon && equippedWeapon.rarity
+    };
+  }
+
+  getWeaponVisualStyle(weapon) {
+    if (weapon && weapon.style) return weapon.style;
+    const match = String(weapon.catalogId || "").match(/-(\d+)/);
+    const index = match ? Number(match[1]) : 0;
+    return ["sword", "blade", "staff", "bow"][index % 4];
+  }
+
+  drawHeldWeaponAt(x, y, heroHeight, weapon, options = {}) {
+    if (!weapon) return;
+    const ctx = this.ctx;
+    const style = this.getWeaponVisualStyle(weapon);
+    const length = this.clamp(heroHeight * 0.48 * (weapon.scale || 1), 56, 112);
+    const grip = Math.max(11, length * 0.16);
+    const color = weapon.color || "#d7d7d7";
+    const accent = weapon.setColor || "#ffe7a3";
+    const action = options.action || 0;
+    ctx.save();
+    ctx.translate(x, y + Math.sin((options.elapsed || 0) * 4) * 1.4);
+    ctx.rotate((options.angle === undefined ? -0.65 : options.angle) + action * 0.22);
+    if (options.flip) ctx.scale(-1, 1);
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.shadowColor = weapon.rarity === "legend" ? color : "rgba(0,0,0,0.35)";
+    ctx.shadowBlur = weapon.rarity === "legend" ? 16 : 4;
+
+    if (style === "staff") {
+      ctx.strokeStyle = "#6a432b";
+      ctx.lineWidth = 7;
+      ctx.beginPath();
+      ctx.moveTo(0, grip);
+      ctx.lineTo(0, -length);
+      ctx.stroke();
+      ctx.strokeStyle = accent;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(0, -length * 0.25);
+      ctx.lineTo(0, -length * 0.95);
+      ctx.stroke();
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.arc(0, -length - 8, 9, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = "#fff4bc";
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.strokeStyle = accent;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(-7, -length - 8);
+      ctx.lineTo(7, -length - 8);
+      ctx.moveTo(0, -length - 15);
+      ctx.lineTo(0, -length - 1);
+      ctx.stroke();
+    } else if (style === "bow") {
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 5;
+      ctx.beginPath();
+      ctx.arc(0, -length * 0.35, length * 0.38, -Math.PI * 0.72, Math.PI * 0.72);
+      ctx.stroke();
+      ctx.strokeStyle = "rgba(255,255,255,0.75)";
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(length * 0.23, -length * 0.66);
+      ctx.lineTo(-length * 0.05, length * 0.03);
+      ctx.stroke();
+      ctx.strokeStyle = accent;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(-length * 0.03, -length * 0.31);
+      ctx.lineTo(length * 0.31, -length * 0.31);
+      ctx.lineTo(length * 0.22, -length * 0.38);
+      ctx.stroke();
+    } else if (style === "spear") {
+      ctx.strokeStyle = "#6a432b";
+      ctx.lineWidth = 6;
+      ctx.beginPath();
+      ctx.moveTo(0, grip + 11);
+      ctx.lineTo(0, -length * 1.05);
+      ctx.stroke();
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.moveTo(0, -length * 1.25);
+      ctx.lineTo(10, -length * 1.02);
+      ctx.lineTo(0, -length * 0.93);
+      ctx.lineTo(-10, -length * 1.02);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = accent;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(-13, -length * 0.92);
+      ctx.quadraticCurveTo(-4, -length * 0.76, -16, -length * 0.62);
+      ctx.moveTo(13, -length * 0.92);
+      ctx.quadraticCurveTo(4, -length * 0.76, 16, -length * 0.62);
+      ctx.stroke();
+    } else if (style === "guitar") {
+      ctx.strokeStyle = "#5c3728";
+      ctx.lineWidth = 5;
+      ctx.beginPath();
+      ctx.moveTo(0, grip + 6);
+      ctx.lineTo(0, -length * 0.75);
+      ctx.stroke();
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.ellipse(0, -length * 0.05, 16, 22, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = accent;
+      ctx.beginPath();
+      ctx.arc(0, -length * 0.05, 5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = accent;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(-10, -length * 0.58);
+      ctx.lineTo(10, -length * 0.58);
+      ctx.stroke();
+    } else {
+      const bladeWidth = style === "blade" ? 13 : 8;
+      ctx.strokeStyle = "#6a432b";
+      ctx.lineWidth = 7;
+      ctx.beginPath();
+      ctx.moveTo(0, grip);
+      ctx.lineTo(0, -grip);
+      ctx.stroke();
+      ctx.strokeStyle = accent;
+      ctx.lineWidth = 5;
+      ctx.beginPath();
+      ctx.moveTo(-13, -grip);
+      ctx.lineTo(13, -grip);
+      ctx.stroke();
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.moveTo(0, -length);
+      ctx.lineTo(bladeWidth, -grip - 2);
+      ctx.lineTo(0, -grip - 12);
+      ctx.lineTo(-bladeWidth, -grip - 2);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = "rgba(255,255,255,0.78)";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(0, -length + 10);
+      ctx.lineTo(0, -grip - 12);
+      ctx.stroke();
+    }
+    ctx.restore();
   }
 
   getHomeHeroRect() {
@@ -580,6 +754,122 @@ class UI {
     ctx.restore();
   }
 
+  drawAvatar(entry, x, y, size = 28) {
+    const ctx = this.ctx;
+    const sprite = entry && entry.avatarSprite;
+    const image = sprite ? this.assets.get(sprite) : null;
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(x + size / 2, y + size / 2, size / 2, 0, Math.PI * 2);
+    ctx.clip();
+    if (image) {
+      const scale = Math.max(size / image.width, size / image.height);
+      const width = image.width * scale;
+      const height = image.height * scale;
+      ctx.drawImage(image, x + (size - width) / 2, y + (size - height) / 2, width, height);
+    } else {
+      ctx.fillStyle = (entry && entry.avatarColor) || "#f1bf62";
+      ctx.fillRect(x, y, size, size);
+      ctx.fillStyle = "rgba(255,255,255,0.72)";
+      ctx.beginPath();
+      ctx.arc(x + size / 2, y + size * 0.38, size * 0.19, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(x + size / 2, y + size * 0.86, size * 0.34, Math.PI, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+    ctx.strokeStyle = (entry && entry.avatarColor) || "#d4a755";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(x + size / 2, y + size / 2, size / 2 - 0.75, 0, Math.PI * 2);
+    ctx.stroke();
+    if (sprite) {
+      this.drawAvatarWeapon(sprite, x, y, size, entry && entry.avatarColor);
+    }
+  }
+
+  drawAvatarWeapon(sprite, x, y, size, fallbackColor = "") {
+    const weapon = this.getCharacterWeaponPreset(sprite, null, fallbackColor);
+    const ctx = this.ctx;
+    const cx = x + size * 0.74;
+    const cy = y + size * 0.72;
+    const length = size * 0.58;
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(-0.62);
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.shadowColor = "rgba(0,0,0,0.35)";
+    ctx.shadowBlur = 2;
+    if (weapon.style === "bow") {
+      ctx.strokeStyle = weapon.color;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(0, -length * 0.22, length * 0.34, -Math.PI * 0.72, Math.PI * 0.72);
+      ctx.stroke();
+      ctx.strokeStyle = "rgba(255,255,255,0.8)";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(length * 0.18, -length * 0.48);
+      ctx.lineTo(-length * 0.02, length * 0.05);
+      ctx.stroke();
+    } else if (weapon.style === "staff") {
+      ctx.strokeStyle = weapon.accent;
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.moveTo(0, length * 0.15);
+      ctx.lineTo(0, -length * 0.75);
+      ctx.stroke();
+      ctx.fillStyle = weapon.color;
+      ctx.beginPath();
+      ctx.arc(0, -length * 0.88, size * 0.08, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (weapon.style === "spear") {
+      ctx.strokeStyle = "#6a432b";
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.moveTo(0, length * 0.2);
+      ctx.lineTo(0, -length * 0.8);
+      ctx.stroke();
+      ctx.fillStyle = weapon.color;
+      ctx.beginPath();
+      ctx.moveTo(0, -length);
+      ctx.lineTo(size * 0.08, -length * 0.78);
+      ctx.lineTo(-size * 0.08, -length * 0.78);
+      ctx.closePath();
+      ctx.fill();
+    } else if (weapon.style === "guitar") {
+      ctx.strokeStyle = "#5c3728";
+      ctx.lineWidth = 2.2;
+      ctx.beginPath();
+      ctx.moveTo(0, length * 0.15);
+      ctx.lineTo(0, -length * 0.55);
+      ctx.stroke();
+      ctx.fillStyle = weapon.color;
+      ctx.beginPath();
+      ctx.ellipse(0, -length * 0.02, size * 0.12, size * 0.16, 0, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      const bladeWidth = weapon.style === "blade" ? size * 0.09 : size * 0.055;
+      ctx.strokeStyle = "#6a432b";
+      ctx.lineWidth = 2.4;
+      ctx.beginPath();
+      ctx.moveTo(0, length * 0.15);
+      ctx.lineTo(0, -length * 0.14);
+      ctx.stroke();
+      ctx.fillStyle = weapon.color;
+      ctx.beginPath();
+      ctx.moveTo(0, -length);
+      ctx.lineTo(bladeWidth, -length * 0.18);
+      ctx.lineTo(0, -length * 0.32);
+      ctx.lineTo(-bladeWidth, -length * 0.18);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
   renderRanking(profile, entries, status = "") {
     this.renderHome(profile, "");
     const ctx = this.ctx;
@@ -595,10 +885,11 @@ class UI {
     entries.slice(0, 7).forEach((entry, index) => {
       const y = modal.y + 108 + index * 34;
       this.fillPanel({ x: modal.x + 15, y, width: modal.width - 30, height: 27 }, entry.self ? "rgba(60, 144, 99, 0.2)" : "rgba(91, 73, 57, 0.08)", 5);
+      this.drawAvatar(entry, modal.x + 22, y + 2, 23);
       ctx.textAlign = "left";
       ctx.fillStyle = entry.self ? "#287b50" : "#5b4939";
       ctx.font = "bold 12px sans-serif";
-      ctx.fillText(`${index + 1}. ${entry.name}`, modal.x + 25, y + 18);
+      ctx.fillText(`${index + 1}. ${entry.name}`, modal.x + 52, y + 18);
       ctx.textAlign = "right";
       ctx.fillText(`${entry.score} 分`, modal.x + modal.width - 25, y + 18);
     });
@@ -614,15 +905,16 @@ class UI {
     ctx.font = "12px sans-serif";
     ctx.textAlign = "center";
     ctx.fillText(status || "本地演示匹配", this.width / 2, modal.y + 74);
-    opponents.forEach((entry, index) => {
+    opponents.slice(0, modal.rows.length).forEach((entry, index) => {
       const rect = modal.rows[index];
       this.fillPanel(rect, "rgba(91, 73, 57, 0.09)", 7);
+      this.drawAvatar(entry, rect.x + 9, rect.y + 7, 36);
       ctx.textAlign = "left";
       ctx.fillStyle = "#5b4939";
       ctx.font = "bold 13px sans-serif";
-      ctx.fillText(entry.name, rect.x + 12, rect.y + 19);
+      ctx.fillText(entry.name, rect.x + 53, rect.y + 19);
       ctx.font = "11px sans-serif";
-      ctx.fillText(`${entry.realm} · 妖力 ${entry.power}`, rect.x + 12, rect.y + 37);
+      ctx.fillText(`${entry.realm} · 妖力 ${entry.power}`, rect.x + 53, rect.y + 37);
       ctx.textAlign = "right";
       ctx.fillStyle = "#9a4c53";
       ctx.font = "bold 12px sans-serif";
@@ -643,11 +935,17 @@ class UI {
     ctx.fillText(item ? `${item.name}  +${item.enhanceLevel || 0}` : "该部位尚未装备", this.width / 2, modal.y + 95);
     if (item) {
       const level = item.enhanceLevel || 0;
+      const chance = typeof profile.getEnhanceChance === "function" ? profile.getEnhanceChance(slot) : 100;
+      const cost = profile.getEnhanceCost(slot);
+      const failCost = Math.max(1, Math.round(cost * 0.4));
       ctx.fillStyle = "#5b4939";
       ctx.font = "12px sans-serif";
-      ctx.fillText(`当前加成：基础属性 +${level * 8}%`, this.width / 2, modal.y + 132);
-      ctx.fillText(level >= 15 ? "已达到最高强化等级" : `下一级：基础属性 +${(level + 1) * 8}%`, this.width / 2, modal.y + 158);
-      this.drawButton(modal.action, level >= 15 ? "#6f6a61" : "#b07a35", level >= 15 ? "已满级" : `强化 -${profile.getEnhanceCost(slot)} 灵石`);
+      ctx.fillText(`当前加成：基础属性 +${level * 8}%`, this.width / 2, modal.y + 124);
+      ctx.fillText(level >= 15 ? "已达到最高强化等级" : `下一级：基础属性 +${(level + 1) * 8}%`, this.width / 2, modal.y + 148);
+      ctx.fillStyle = chance >= 70 ? "#317d54" : chance >= 45 ? "#9b6b3f" : "#b24d48";
+      ctx.font = "bold 12px sans-serif";
+      ctx.fillText(level >= 15 ? "成功率 0%" : `成功率 ${chance}% · 失败消耗 ${failCost} 灵石`, this.width / 2, modal.y + 174);
+      this.drawButton(modal.action, level >= 15 ? "#6f6a61" : "#b07a35", level >= 15 ? "已满级" : `强化 -${cost} 灵石`);
     }
     this.drawButton(modal.close, "#7f715f", "关闭");
   }
@@ -846,7 +1144,7 @@ class UI {
     };
   }
 
-  renderShop(profile, wheelResult = "") {
+  renderShop(profile, shopMessage = "") {
     this.renderHome(profile, "");
     const ctx = this.ctx;
     const modal = this.getShopLayout();
@@ -889,8 +1187,7 @@ class UI {
     ctx.textAlign = "center";
     ctx.fillStyle = "#765a42";
     ctx.font = "11px sans-serif";
-    ctx.fillText(wheelResult || "转盘可抽取灵石、仙桃和随机外观", this.width / 2, modal.wheel.y - 13);
-    this.drawButton(modal.wheel, "#b07a35", "转盘抽奖 -20 灵石");
+    ctx.fillText(shopMessage || "所有皮肤只能通过灵石直接购买", this.width / 2, modal.close.y - 13);
     this.drawButton(modal.close, "#7f715f", "关闭");
   }
 
@@ -913,8 +1210,7 @@ class UI {
         width: rowWidth,
         height: rowHeight
       })),
-      wheel: { x: x + 18, y: y + height - 61, width: width * 0.57, height: 43 },
-      close: { x: x + width * 0.62, y: y + height - 61, width: width * 0.32, height: 43 }
+      close: { x: x + 18, y: y + height - 61, width: width - 36, height: 43 }
     };
   }
 
@@ -937,41 +1233,43 @@ class UI {
     ctx.font = "12px sans-serif";
     ctx.fillText("点击技能即可装备，战斗中自动释放", this.width / 2, modal.y + 72);
 
-    skills.forEach((skill, index) => {
+    skills.slice(0, modal.skillRows.length).forEach((skill, index) => {
       const rect = modal.skillRows[index];
       this.fillPanel(rect, skill.selected ? "rgba(60, 144, 99, 0.2)" : "rgba(91, 73, 57, 0.08)", 7);
       ctx.strokeStyle = skill.selected ? "#3c9063" : "rgba(118, 90, 66, 0.24)";
       ctx.strokeRect(rect.x, rect.y, rect.width, rect.height);
-      this.drawSkillIcon(rect.x + 20, rect.y + rect.height / 2, 13, skill.type, skill.color);
+      this.drawSkillIcon(rect.x + 18, rect.y + rect.height / 2, Math.min(12, rect.height * 0.3), skill.type, skill.color);
       ctx.textAlign = "left";
       ctx.fillStyle = "#4b3827";
-      ctx.font = "bold 13px sans-serif";
-      ctx.fillText(skill.name, rect.x + 42, rect.y + 18);
+      ctx.font = `bold ${rect.height < 38 ? 11 : 12}px sans-serif`;
+      ctx.fillText(skill.name, rect.x + 38, rect.y + rect.height * 0.38);
       ctx.fillStyle = "#816d5d";
-      ctx.font = "10px sans-serif";
-      ctx.fillText(skill.description, rect.x + 42, rect.y + 35);
+      ctx.font = `${rect.height < 38 ? 9 : 10}px sans-serif`;
+      ctx.fillText(skill.description, rect.x + 38, rect.y + rect.height * 0.78);
       ctx.textAlign = "right";
       ctx.fillStyle = skill.selected ? "#317d54" : "#8b6d4b";
-      ctx.font = "bold 11px sans-serif";
-      ctx.fillText(skill.selected ? "已装备" : `${skill.cooldown.toFixed(1)}秒`, rect.x + rect.width - 9, rect.y + 27);
+      ctx.font = `bold ${rect.height < 38 ? 10 : 11}px sans-serif`;
+      ctx.fillText(skill.selected ? "已装备" : `${skill.cooldown.toFixed(1)}秒`, rect.x + rect.width - 9, rect.y + rect.height * 0.6);
     });
     this.drawButton(modal.close, "#9b6b3f", "完成");
   }
 
   getSkillsLayout() {
     const width = Math.min(356, this.width - 24);
-    const height = Math.min(452, this.layout.safeBottom - this.layout.contentTop - 22);
+    const height = Math.min(690, this.layout.safeBottom - this.layout.contentTop - 22);
     const x = (this.width - width) / 2;
     const y = this.layout.contentTop + (this.layout.safeBottom - this.layout.contentTop - height) / 2;
     const rowX = x + 14;
     const rowWidth = width - 28;
-    const rowHeight = 45;
-    const rowGap = 7;
+    const rowHeight = this.height < 720 ? 34 : 36;
+    const rowGap = this.height < 720 ? 3 : 4;
     const rowY = y + 88;
+    const available = Math.max(1, height - 154);
+    const rowCount = Math.max(5, Math.floor(available / (rowHeight + rowGap)));
     return {
       x, y, width, height,
       headerHeight: 50,
-      skillRows: Array.from({ length: 5 }, (_, index) => ({
+      skillRows: Array.from({ length: rowCount }, (_, index) => ({
         x: rowX,
         y: rowY + index * (rowHeight + rowGap),
         width: rowWidth,
@@ -1093,7 +1391,7 @@ class UI {
     ctx.textAlign = "center";
     ctx.fillStyle = "#ffe3a0";
     ctx.font = "bold 17px sans-serif";
-    ctx.fillText(battle.isPvp ? `演武场 · 对阵 ${battle.enemy.name}` : `${battle.enemy.isBoss ? "首领挑战" : "冒险挑战"} · 第 ${battle.stage} 关`, this.width / 2, top + 21);
+    ctx.fillText(battle.isPvp ? `${battle.fairMode ? "公平演武" : "演武场"} · 对阵 ${battle.enemy.name}` : `${battle.enemy.isBoss ? "首领挑战" : "冒险挑战"} · 第 ${battle.stage} 关`, this.width / 2, top + 21);
     ctx.fillStyle = battle.scene.accent;
     ctx.font = "bold 11px sans-serif";
     ctx.fillText(`${battle.scene.name} · ${battle.scene.modifierName}`, this.width / 2, top + 42);
@@ -1112,14 +1410,22 @@ class UI {
     const scaledEnemyHeight = enemyHeight * bossScale;
     const enemyWidth = this.getSpriteWidth(enemySprite, scaledEnemyHeight);
     const skin = profile.getEquippedCosmetics().find((item) => item.type === "skin");
-    this.drawBattleFighter(skin ? skin.sprite : profile.character.sprite, this.width * 0.09 + heroLunge, fighterBaseY - heroHeight + heroIdle, heroHeight, {
+    const heroSprite = skin ? skin.sprite : profile.character.sprite;
+    const weapon = this.getCharacterWeaponPreset(heroSprite, profile.getEquipped("weapon"));
+    this.drawBattleFighter(heroSprite, this.width * 0.09 + heroLunge, fighterBaseY - heroHeight + heroIdle, heroHeight, {
       flip: false,
-      shake: battle.enemyAction > 0 ? 2 : 0
+      shake: battle.enemyAction > 0 ? 2 : 0,
+      weapon,
+      elapsed: battle.elapsed,
+      action: battle.heroAction > 0 ? 1 : 0
     });
     this.drawBattleFighter(enemySprite, this.width - this.width * 0.09 - enemyWidth - enemyLunge, fighterBaseY - scaledEnemyHeight + enemyIdle, scaledEnemyHeight, {
       flip: true,
       shake: battle.heroAction > 0 ? 2 : 0,
-      boss: battle.enemy.isBoss ? battle.enemy : null
+      boss: battle.enemy.isBoss ? battle.enemy : null,
+      weapon: battle.isPvp && enemySprite.startsWith("hero-") ? this.getCharacterWeaponPreset(enemySprite, null, battle.enemy.avatarColor) : null,
+      elapsed: battle.elapsed,
+      action: battle.enemyAction > 0 ? 1 : 0
     });
     const barWidth = Math.min(140, this.width * 0.38);
     this.drawHealthBar(this.layout.edge + 10, healthY, barWidth, battle.heroHp / battle.heroMaxHp, battle.heroDisplayedHp / battle.heroMaxHp, "#63c981", profile.character.name);
@@ -1246,6 +1552,15 @@ class UI {
     ctx.restore();
     if (options.boss) {
       this.drawBossOrnament(x, y, width, height, options.boss);
+    }
+    if (options.weapon) {
+      const weaponX = options.flip ? 1 - (options.weapon.battleX || 0.7) : (options.weapon.battleX || 0.7);
+      this.drawHeldWeaponAt(x + shakeX + width * weaponX, y + height * (options.weapon.battleY || 0.6), height, options.weapon, {
+        elapsed: options.elapsed || 0,
+        action: options.action || 0,
+        angle: (options.weapon.battleAngle || -0.72) - (options.action || 0) * 0.28,
+        flip: options.flip
+      });
     }
   }
 
@@ -1900,10 +2215,6 @@ class UI {
 
   getCosmeticIndexAt(x, y) {
     return this.getShopLayout().cosmeticRows.findIndex((rect) => this.contains(rect, x, y));
-  }
-
-  isWheelButton(x, y) {
-    return this.contains(this.getShopLayout().wheel, x, y);
   }
 
   isShopCloseButton(x, y) {

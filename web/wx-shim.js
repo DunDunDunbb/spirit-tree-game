@@ -23,6 +23,49 @@
     return global.localStorage.getItem("uganda-current-account") || "";
   }
 
+  function getAccountUserKey(account = getCurrentAccount()) {
+    return account ? `uganda-account-user:${account}` : "";
+  }
+
+  function getAccountUser() {
+    const key = getAccountUserKey();
+    if (!key) return {};
+    try {
+      return JSON.parse(global.localStorage.getItem(key) || "{}") || {};
+    } catch (error) {
+      return {};
+    }
+  }
+
+  function saveAccountUser(user = {}) {
+    const username = user.username || getCurrentAccount();
+    if (!username) return;
+    const current = getAccountUser();
+    global.localStorage.setItem(getAccountUserKey(username), JSON.stringify({ ...current, ...user, username }));
+  }
+
+  function bindProfileToAccount(profile = {}) {
+    const user = getAccountUser();
+    const displayName = String(user.displayName || "").trim().slice(0, 8);
+    if (!displayName) return profile;
+    if (profile.characterName === displayName) return profile;
+    return { ...profile, characterName: displayName };
+  }
+
+  const avatarBySkin = {
+    streetwear: { sprite: "hero-skin-streetwear", color: "#f1bf62" },
+    wuxia: { sprite: "hero-skin-wuxia", color: "#78c9ff" },
+    royal: { sprite: "hero-skin-royal", color: "#ffd86b" },
+    bunny: { sprite: "hero-skin-bunny", color: "#e5b8ff" },
+    nurse: { sprite: "hero-skin-nurse", color: "#ff9fb0" },
+    "bocchi-shirt": { sprite: "hero-skin-bocchi-shirt", color: "#ff9bc3" }
+  };
+
+  function getAvatar(profile = {}) {
+    const skinId = profile.equippedCosmetics && profile.equippedCosmetics.skin;
+    return avatarBySkin[skinId] || { sprite: "hero-main-character", color: "#f1bf62" };
+  }
+
   function apiRequest(path, options = {}) {
     const headers = { "Content-Type": "application/json", ...(options.headers || {}) };
     const token = getSessionToken();
@@ -36,11 +79,11 @@
 
   function getSavedProfile() {
     const value = global.localStorage.getItem(getProfileKey());
-    if (!value) return {};
+    if (!value) return bindProfileToAccount({});
     try {
-      return JSON.parse(value) || {};
+      return bindProfileToAccount(JSON.parse(value) || {});
     } catch (error) {
-      return {};
+      return bindProfileToAccount({});
     }
   }
 
@@ -67,6 +110,7 @@
       nameInput.focus();
       return;
     }
+    saveAccountUser({ displayName: name });
     if (playerNameHandler) playerNameHandler(name);
     else pendingPlayerName = name;
     closeNameDialog();
@@ -176,16 +220,25 @@
       const value = global.localStorage.getItem(storageKey);
       if (!value) return undefined;
       try {
-        return JSON.parse(value);
+        const parsed = JSON.parse(value);
+        return key === "spirit-tree-profile-v1" ? bindProfileToAccount(parsed) : parsed;
       } catch (error) {
         return undefined;
       }
     },
     syncLeaderboard(profile) {
+      const avatar = getAvatar(profile);
+      saveAccountUser({
+        displayName: profile.characterName,
+        avatarSprite: avatar.sprite,
+        avatarColor: avatar.color
+      });
       return apiRequest("/api/leaderboard/sync", {
         method: "POST",
         body: JSON.stringify({
           displayName: profile.characterName,
+          avatarSprite: avatar.sprite,
+          avatarColor: avatar.color,
           rankScore: profile.rankScore,
           pvpWins: profile.pvpWins,
           pvpLosses: profile.pvpLosses

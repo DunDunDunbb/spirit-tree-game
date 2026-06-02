@@ -7,7 +7,6 @@ const Profile = require("../systems/Profile");
 const AudioManager = require("../systems/AudioManager");
 const AssetLoader = require("../render/AssetLoader");
 const UI = require("../render/UI");
-const { COSMETICS } = require("../config/cosmetics");
 
 const GAME_STATE = {
   HOME: "home",
@@ -60,7 +59,7 @@ class Game {
     this.dialogue = null;
     this.visualTime = 0;
     this.lastFrameTime = 0;
-    this.wheelResult = "";
+    this.shopMessage = "";
     this.quickDrawResults = [];
     this.quickDrawSynthesis = null;
     this.enhanceSlot = "";
@@ -170,7 +169,7 @@ class Game {
     } else if (this.state === GAME_STATE.BATTLE_RESULT) {
       this.ui.renderBattleResult(this.profile, this.battle);
     } else if (this.state === GAME_STATE.SHOP) {
-      this.ui.renderShop(this.profile, this.wheelResult);
+      this.ui.renderShop(this.profile, this.shopMessage);
     } else if (this.state === GAME_STATE.QUICK_DRAW) {
       this.ui.renderQuickDraw(this.profile, this.quickDrawResults, this.visualTime);
     } else if (this.state === GAME_STATE.RANKING) {
@@ -376,7 +375,7 @@ class Game {
   }
 
   openShop() {
-    this.wheelResult = "";
+    this.shopMessage = "点击皮肤可直接用灵石购买或换上";
     this.state = GAME_STATE.SHOP;
   }
 
@@ -391,6 +390,34 @@ class Game {
       { name: "赤霞真人", realm: "筑基中期", power: 2180, hp: 620, atk: 64, spd: 154, quote: "草原之上，强者为尊。" },
       { name: "月坛剑客", realm: "筑基后期", power: 2640, hp: 730, atk: 72, spd: 168, quote: "此剑，只问胜负。" }
     ];
+  }
+
+  clamp(value, min, max) {
+    return Math.max(min, Math.min(max, value));
+  }
+
+  getFairPvpStats(source = {}) {
+    const rawStats = source.rawStats || {};
+    const score = Number(source.rankScore === undefined ? source.power : source.rankScore) || 1000;
+    const wins = Number(source.pvpWins === undefined ? source.wins : source.pvpWins) || 0;
+    const losses = Number(source.pvpLosses === undefined ? source.losses : source.pvpLosses) || 0;
+    const equipmentBonus = rawStats.power ? this.clamp(Math.round(Math.sqrt(rawStats.power)), 0, 220) : 0;
+    const power = this.clamp(Math.round(score + wins * 35 - losses * 18 + equipmentBonus), 900, 50000);
+    return {
+      power,
+      hp: this.clamp(Math.round(520 + power * 0.34), 760, 6800),
+      atk: this.clamp(Math.round(42 + power / 82), 52, 520),
+      spd: this.clamp(Math.round(118 + wins * 1.8 - losses * 0.9 + power / 260), 105, 260),
+      crit: this.clamp(Math.round(10 + wins / 8 + power / 2400), 8, 35),
+      dodge: this.clamp(Math.round(5 + power / 4200), 4, 18),
+      combo: this.clamp(Math.round(7 + wins / 10 + power / 3600), 6, 26),
+      lifesteal: this.clamp(Math.round(power / 6500), 0, 8),
+      counter: this.clamp(Math.round(3 + losses / 20), 3, 14)
+    };
+  }
+
+  getAttackInterval(speed, base) {
+    return this.clamp(base - (speed - 120) / 520, 0.54, 1.12);
   }
 
   openRanking() {
@@ -446,10 +473,20 @@ class Game {
   enhanceSelectedEquipment() {
     const result = this.profile.enhanceEquipment(this.enhanceSlot);
     if (!result.ok) {
-      this.showToast(result.reason === "coins" ? `灵石不足，需要 ${result.cost}` : result.reason === "max" ? "装备已强化至最高等级" : "该部位尚未装备");
+      this.showToast(result.reason === "coins"
+        ? `灵石不足，需要 ${result.cost}`
+        : result.reason === "failed"
+          ? `强化失败，消耗 ${result.paid} 灵石`
+          : result.reason === "max"
+            ? "装备已强化至最高等级"
+            : "该部位尚未装备");
+      if (result.reason === "failed") {
+        this.audio.playSfx("dodge");
+        this.saveProfile();
+      }
       return;
     }
-    this.showToast(`${result.item.name} 强化至 +${result.item.enhanceLevel}`);
+    this.showToast(`${result.item.name} 强化至 +${result.item.enhanceLevel}，消耗 ${result.paid} 灵石`);
     this.audio.playSfx("equip");
     this.saveProfile();
   }
@@ -459,41 +496,11 @@ class Game {
     if (!item) return;
     const result = this.profile.buyOrEquipCosmetic(item.id);
     if (!result.ok) {
-      this.wheelResult = `灵石不足，需要 ${item.price}`;
+      this.shopMessage = `灵石不足，需要 ${item.price}`;
       return;
     }
-    this.wheelResult = item.owned ? `已换上：${item.name}` : `已购买并换上：${item.name}`;
+    this.shopMessage = item.owned ? `已换上：${item.name}` : `已购买并换上：${item.name}`;
     this.audio.playSfx("equip");
-    this.saveProfile();
-  }
-
-  spinWheel() {
-    const cost = 20;
-    if (this.profile.coins < cost) {
-      this.wheelResult = `灵石不足，转盘需要 ${cost}`;
-      return;
-    }
-    this.profile.coins -= cost;
-    const roll = Math.random();
-    if (roll < 0.32) {
-      const coins = 35 + Math.floor(Math.random() * 31);
-      this.profile.coins += coins;
-      this.wheelResult = `转盘奖励：灵石 +${coins}`;
-    } else if (roll < 0.64) {
-      const peaches = 3 + Math.floor(Math.random() * 5);
-      this.profile.peaches += peaches;
-      this.wheelResult = `转盘奖励：仙桃 +${peaches}`;
-    } else {
-      const locked = COSMETICS.filter((item) => !this.profile.ownedCosmetics[item.id]);
-      if (locked.length) {
-        const item = locked[Math.floor(Math.random() * locked.length)];
-        this.profile.unlockCosmetic(item.id);
-        this.wheelResult = `转盘奖励：解锁 ${item.name}`;
-      } else {
-        this.profile.coins += 90;
-        this.wheelResult = "外观已集齐：灵石 +90";
-      }
-    }
     this.saveProfile();
   }
 
@@ -618,20 +625,32 @@ class Game {
     const opponent = this.pvpOpponents[index];
     if (!opponent) return;
     const stats = this.profile.getStats();
+    const heroFair = this.getFairPvpStats({
+      rankScore: this.profile.rankScore,
+      pvpWins: this.profile.pvpWins,
+      pvpLosses: this.profile.pvpLosses,
+      rawStats: stats
+    });
+    const enemyFair = this.getFairPvpStats(opponent);
     const scene = getSceneForStage(index + 2);
     this.battle = {
       stage: this.profile.stage,
       scene,
       isPvp: true,
-      enemy: { ...opponent, type: opponent.type || (index % 2 ? "brute" : "imp"), sprite: "hero-main-character", maxHp: opponent.hp, isBoss: false },
-      heroMaxHp: stats.hp, heroHp: stats.hp, heroDisplayedHp: stats.hp,
-      heroAttack: stats.atk, heroCrit: stats.crit, heroCombo: stats.combo, heroDodge: stats.dodge,
-      heroLifesteal: stats.lifesteal, heroCounter: stats.counter,
+      fairMode: true,
+      enemy: { ...opponent, ...enemyFair, type: opponent.type || (index % 2 ? "brute" : "imp"), sprite: opponent.avatarSprite || "hero-main-character", maxHp: enemyFair.hp, hp: enemyFair.hp, isBoss: false },
+      heroMaxHp: heroFair.hp, heroHp: heroFair.hp, heroDisplayedHp: heroFair.hp,
+      heroAttack: heroFair.atk, heroCrit: heroFair.crit, heroCombo: heroFair.combo, heroDodge: heroFair.dodge,
+      heroLifesteal: heroFair.lifesteal, heroCounter: heroFair.counter,
+      heroAttackInterval: this.getAttackInterval(heroFair.spd, 0.82),
+      enemyAttackInterval: this.getAttackInterval(enemyFair.spd, 0.98),
       heroAttackTimer: 0.3, skillTimer: 1.7, skillAction: 0, enemyAttackTimer: 0.85,
       enemyDisplayedHp: opponent.hp, message: "演武场切磋开始", introTime: 0.72, elapsed: 0,
       heroAction: 0, enemyAction: 0, effects: [], hitStop: 0, screenShake: 0, screenFlash: 0,
       talk: opponent.quote, talkTime: 2.2, nextTalkTime: 3.5, victory: false, rewardPeaches: 0, rewardCoins: 0
     };
+    this.battle.enemyDisplayedHp = enemyFair.hp;
+    this.battle.message = "公平演武开始";
     this.state = GAME_STATE.BATTLE;
     this.audio.playStageBgm(index + 2, false);
   }
@@ -692,7 +711,7 @@ class Game {
         this.addBattleEffect("damage", "enemy", "#a8ec83", "连击", 0.72);
         this.addBattleEffect("slash", "enemy", "#a8ec83", "", 0.24);
       }
-      battle.heroAttackTimer = 0.72 * battle.scene.heroAttackSpeed;
+      battle.heroAttackTimer = battle.heroAttackInterval || (0.72 * battle.scene.heroAttackSpeed);
     }
 
     if (battle.enemy.hp <= 0) {
@@ -737,7 +756,7 @@ class Game {
         }
       }
       battle.enemyAction = 0.3;
-      battle.enemyAttackTimer = 1.02 * battle.scene.enemyAttackSpeed;
+      battle.enemyAttackTimer = battle.enemyAttackInterval || (1.02 * battle.scene.enemyAttackSpeed);
     }
 
     if (battle.heroHp <= 0) {
@@ -878,7 +897,6 @@ class Game {
     } else if (this.state === GAME_STATE.SHOP) {
       const cosmeticIndex = this.ui.getCosmeticIndexAt(x, y);
       if (cosmeticIndex >= 0) this.selectCosmetic(cosmeticIndex);
-      else if (this.ui.isWheelButton(x, y)) this.spinWheel();
       else if (this.ui.isShopCloseButton(x, y)) this.closeShop();
     } else if (this.state === GAME_STATE.QUICK_DRAW) {
       const count = this.ui.getQuickDrawCountAt(x, y);
@@ -891,13 +909,14 @@ class Game {
       if (this.ui.isSimpleModalCloseButton(x, y, 390)) this.state = GAME_STATE.HOME;
     } else if (this.state === GAME_STATE.PVP) {
       const opponentIndex = this.ui.getPvpOpponentIndexAt(x, y);
-      if (opponentIndex >= 0) this.startPvpBattle(opponentIndex);
+      if (opponentIndex >= 0 && opponentIndex < this.pvpOpponents.length) this.startPvpBattle(opponentIndex);
+      else if (opponentIndex >= 0) this.pvpStatus = "正在匹配实时玩家，请稍候";
       else if (this.ui.isSimpleModalCloseButton(x, y, 410)) this.state = GAME_STATE.HOME;
     } else if (this.state === GAME_STATE.ENHANCE) {
       if (this.ui.isEnhanceActionButton(x, y)) this.enhanceSelectedEquipment();
       else if (this.ui.isSimpleModalCloseButton(x, y, 340)) this.state = GAME_STATE.HOME;
     } else if (this.state === GAME_STATE.BATTLE_RESULT) {
-      if (this.ui.isContinueButton(x, y) && this.battle.victory) this.startBattle();
+      if (this.ui.isContinueButton(x, y) && this.battle.victory && !this.battle.isPvp) this.startBattle();
       else if (this.ui.isResultButton(x, y)) {
         this.state = GAME_STATE.HOME;
         this.audio.playBgm("home");
