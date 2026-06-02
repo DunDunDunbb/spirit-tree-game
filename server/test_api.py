@@ -44,9 +44,16 @@ def main() -> None:
             assert status == 200
             assert [entry["name"] for entry in leaderboard["entries"]] == ["满级测试员", "乙", "甲"]
             assert leaderboard["entries"][2]["self"]
+            status, opponents = request(base_url, "/api/pvp/opponents", token=first["token"])
+            assert status == 200
+            assert opponents["ok"]
+            opponent_names = [entry["name"] for entry in opponents["opponents"]]
+            assert "乙" in opponent_names
+            assert "甲" not in opponent_names
+            assert all(entry["hp"] > 0 and entry["atk"] > 0 and entry["power"] > 0 for entry in opponents["opponents"])
             status, tester = request(base_url, "/api/auth/login", "POST", {"username": app.TEST_USERNAME, "password": app.TEST_PASSWORD})
             assert status == 200 and tester["user"]["rankScore"] == 9_999_999
-            print("PASS register login rejection sync leaderboard")
+            print("PASS register login rejection sync leaderboard pvp")
         finally:
             server.shutdown()
             server.server_close()

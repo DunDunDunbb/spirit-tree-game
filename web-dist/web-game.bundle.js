@@ -101,6 +101,7 @@ class Game {
     this.quickDrawSynthesis = null;
     this.enhanceSlot = "";
     this.pvpOpponents = this.createPvpOpponents();
+    this.pvpStatus = "本地演示匹配";
     this.rankingEntries = [];
     this.rankingStatus = "正在读取实时仙榜...";
 
@@ -211,7 +212,7 @@ class Game {
     } else if (this.state === GAME_STATE.RANKING) {
       this.ui.renderRanking(this.profile, this.rankingEntries, this.rankingStatus);
     } else if (this.state === GAME_STATE.PVP) {
-      this.ui.renderPvpLobby(this.profile, this.pvpOpponents);
+      this.ui.renderPvpLobby(this.profile, this.pvpOpponents, this.pvpStatus);
     } else if (this.state === GAME_STATE.ENHANCE) {
       this.ui.renderEnhance(this.profile, this.enhanceSlot);
     }
@@ -450,6 +451,27 @@ class Game {
 
   openPvp() {
     this.state = GAME_STATE.PVP;
+    this.pvpOpponents = [];
+    this.pvpStatus = "正在读取实时玩家...";
+    if (typeof wx.fetchPvpOpponents !== "function") {
+      this.pvpOpponents = this.createPvpOpponents();
+      this.pvpStatus = "本地演示匹配";
+      return;
+    }
+    wx.fetchPvpOpponents()
+      .then((opponents) => {
+        if (opponents.length) {
+          this.pvpOpponents = opponents;
+          this.pvpStatus = "实时玩家匹配";
+        } else {
+          this.pvpOpponents = this.createPvpOpponents();
+          this.pvpStatus = "暂无其他玩家，已切换本地演示";
+        }
+      })
+      .catch((error) => {
+        this.pvpOpponents = this.createPvpOpponents();
+        this.pvpStatus = `实时玩家读取失败：${error.message}`;
+      });
   }
 
   openEnhance(slot) {
@@ -637,7 +659,7 @@ class Game {
       stage: this.profile.stage,
       scene,
       isPvp: true,
-      enemy: { ...opponent, type: index % 2 ? "brute" : "imp", sprite: "hero-main-character", maxHp: opponent.hp, isBoss: false },
+      enemy: { ...opponent, type: opponent.type || (index % 2 ? "brute" : "imp"), sprite: "hero-main-character", maxHp: opponent.hp, isBoss: false },
       heroMaxHp: stats.hp, heroHp: stats.hp, heroDisplayedHp: stats.hp,
       heroAttack: stats.atk, heroCrit: stats.crit, heroCombo: stats.combo, heroDodge: stats.dodge,
       heroLifesteal: stats.lifesteal, heroCounter: stats.counter,
@@ -2706,7 +2728,7 @@ class UI {
     this.drawButton(modal.close, "#7f715f", "关闭");
   }
 
-  renderPvpLobby(profile, opponents) {
+  renderPvpLobby(profile, opponents, status = "") {
     this.renderHome(profile, "");
     const ctx = this.ctx;
     const modal = this.getSimpleModalLayout(410);
@@ -2714,7 +2736,7 @@ class UI {
     ctx.fillStyle = "#765a42";
     ctx.font = "12px sans-serif";
     ctx.textAlign = "center";
-    ctx.fillText("本地演示匹配 · 联网后可替换为实时玩家", this.width / 2, modal.y + 74);
+    ctx.fillText(status || "本地演示匹配", this.width / 2, modal.y + 74);
     opponents.forEach((entry, index) => {
       const rect = modal.rows[index];
       this.fillPanel(rect, "rgba(91, 73, 57, 0.09)", 7);

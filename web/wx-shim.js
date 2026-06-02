@@ -10,8 +10,32 @@
   let playerNameHandler = null;
   let pendingPlayerName = "";
 
+  function getProfileKey() {
+    const account = global.localStorage.getItem("uganda-current-account") || "guest";
+    return `uganda-profile-v1:${account}`;
+  }
+
+  function getSessionToken() {
+    return global.localStorage.getItem("uganda-session-token") || "";
+  }
+
+  function getCurrentAccount() {
+    return global.localStorage.getItem("uganda-current-account") || "";
+  }
+
+  function apiRequest(path, options = {}) {
+    const headers = { "Content-Type": "application/json", ...(options.headers || {}) };
+    const token = getSessionToken();
+    if (token) headers.Authorization = `Bearer ${token}`;
+    return global.fetch(path, { ...options, headers }).then(async (response) => {
+      const result = await response.json();
+      if (!response.ok || !result.ok) throw new Error(result.error || "服务器请求失败");
+      return result;
+    });
+  }
+
   function getSavedProfile() {
-    const value = global.localStorage.getItem("spirit-tree-profile-v1");
+    const value = global.localStorage.getItem(getProfileKey());
     if (!value) return {};
     try {
       return JSON.parse(value) || {};
@@ -144,20 +168,53 @@
       if (navigator.vibrate) navigator.vibrate(25);
     },
     setStorageSync(key, value) {
-      global.localStorage.setItem(key, JSON.stringify(value));
+      const storageKey = key === "spirit-tree-profile-v1" ? getProfileKey() : key;
+      global.localStorage.setItem(storageKey, JSON.stringify(value));
     },
     getStorageSync(key) {
-      const value = global.localStorage.getItem(key);
+      const storageKey = key === "spirit-tree-profile-v1" ? getProfileKey() : key;
+      const value = global.localStorage.getItem(storageKey);
       if (!value) return undefined;
       try {
         return JSON.parse(value);
       } catch (error) {
         return undefined;
       }
-    }
+    },
+    syncLeaderboard(profile) {
+      return apiRequest("/api/leaderboard/sync", {
+        method: "POST",
+        body: JSON.stringify({
+          displayName: profile.characterName,
+          rankScore: profile.rankScore,
+          pvpWins: profile.pvpWins,
+          pvpLosses: profile.pvpLosses
+        })
+      }).catch(() => {});
+    },
+    fetchLeaderboard() {
+      if (global.location.protocol === "file:") {
+        const profile = getSavedProfile();
+        return Promise.resolve([
+          { name: "狮王散人", score: 1640 },
+          { name: "月坛剑客", score: 1488 },
+          { name: "赤霞真人", score: 1325 },
+          { name: profile.characterName || "离线玩家", score: profile.rankScore || 1000, self: true },
+          { name: "草原悍匪·阿坤", score: 884 }
+        ].sort((left, right) => right.score - left.score));
+      }
+      return apiRequest("/api/leaderboard").then((result) => result.entries);
+    },
+    fetchPvpOpponents() {
+      if (global.location.protocol === "file:") {
+        return Promise.resolve([]);
+      }
+      return apiRequest("/api/pvp/opponents").then((result) => result.opponents || []);
+    },
+    getCurrentAccount
   };
 
-  if (!getSavedProfile().characterName) {
+  if (global.localStorage.getItem("uganda-current-account") && !getSavedProfile().characterName) {
     openNameDialog();
   }
 }(globalThis));

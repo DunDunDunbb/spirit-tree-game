@@ -1,0 +1,431 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+    <meta name="theme-color" content="#102846">
+    <link rel="icon" href="data:,">
+    <title>乌干达修仙</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        overflow: hidden;
+        background: #102846;
+      }
+
+      #game-canvas {
+        display: block;
+        width: 100vw;
+        height: 100vh;
+        touch-action: none;
+      }
+
+      #rename-button {
+        position: fixed;
+        top: max(12px, env(safe-area-inset-top));
+        right: 12px;
+        z-index: 2;
+        padding: 7px 11px;
+        border: 1px solid rgba(255, 232, 170, 0.72);
+        border-radius: 7px;
+        color: #fff5cf;
+        background: rgba(11, 30, 52, 0.82);
+        font: 700 13px sans-serif;
+      }
+
+      #account-bar {
+        position: fixed;
+        top: max(12px, env(safe-area-inset-top));
+        left: 12px;
+        z-index: 2;
+        display: flex;
+        gap: 6px;
+        align-items: center;
+        color: #fff5cf;
+        font: 700 11px sans-serif;
+      }
+
+      #logout-button {
+        padding: 6px 8px;
+        border: 1px solid rgba(255, 232, 170, 0.5);
+        border-radius: 7px;
+        color: #fff5cf;
+        background: rgba(11, 30, 52, 0.82);
+        font: 700 11px sans-serif;
+      }
+
+      #login-screen {
+        position: fixed;
+        inset: 0;
+        z-index: 10;
+        display: grid;
+        place-items: end center;
+        padding: 28px 24px max(42px, env(safe-area-inset-bottom));
+        background:
+          linear-gradient(180deg, rgba(5, 12, 23, 0.1), rgba(5, 12, 23, 0.56) 58%, rgba(5, 12, 23, 0.92)),
+          url("assets/images/ui/uganda-login-cover.png") center / cover;
+      }
+
+      #login-screen[hidden] {
+        display: none;
+      }
+
+      #login-card {
+        width: min(100%, 350px);
+        padding: 18px;
+        border: 1px solid rgba(255, 224, 144, 0.72);
+        border-radius: 16px;
+        background: rgba(8, 20, 33, 0.84);
+        box-shadow: 0 16px 46px rgba(0, 0, 0, 0.4);
+        text-align: center;
+        backdrop-filter: blur(8px);
+      }
+
+      #login-card h1 {
+        margin: 0;
+        color: #ffe08a;
+        font: 800 34px serif;
+        letter-spacing: 5px;
+        text-shadow: 0 4px 14px rgba(0, 0, 0, 0.7);
+      }
+
+      #login-card p {
+        margin: 7px 0 14px;
+        color: #d4e7de;
+        font: 12px sans-serif;
+      }
+
+      #login-form input {
+        width: 100%;
+        margin-top: 8px;
+        padding: 11px 12px;
+        border: 1px solid rgba(255, 224, 144, 0.46);
+        border-radius: 8px;
+        outline: none;
+        color: #fff8dd;
+        background: rgba(1, 8, 18, 0.72);
+        font: 15px sans-serif;
+      }
+
+      #login-submit {
+        width: 100%;
+        margin-top: 12px;
+        padding: 12px;
+        border: 0;
+        border-radius: 8px;
+        color: #173423;
+        background: linear-gradient(135deg, #f9d878, #8fe3a4);
+        font: 800 15px sans-serif;
+      }
+
+      #register-submit {
+        width: 100%;
+        margin-top: 8px;
+        padding: 10px;
+        border: 1px solid rgba(255, 224, 144, 0.56);
+        border-radius: 8px;
+        color: #ffe7a3;
+        background: rgba(8, 20, 33, 0.5);
+        font: 700 14px sans-serif;
+      }
+
+      #login-message {
+        min-height: 18px;
+        margin-top: 8px;
+        color: #ffcb9d;
+        font: 12px sans-serif;
+      }
+
+      #announcement-screen {
+        position: fixed;
+        inset: 0;
+        z-index: 9;
+        display: grid;
+        place-items: center;
+        padding: 24px;
+        background: rgba(2, 10, 20, 0.78);
+      }
+
+      #announcement-screen[hidden] {
+        display: none;
+      }
+
+      #announcement-card {
+        width: min(100%, 360px);
+        padding: 20px;
+        border: 2px solid #d4a755;
+        border-radius: 14px;
+        color: #5c3e25;
+        background: #f7edd7;
+        box-shadow: 0 18px 44px rgba(0, 0, 0, 0.42);
+      }
+
+      #announcement-card h2 {
+        margin: 0;
+        color: #4b3827;
+        font: 800 22px serif;
+        text-align: center;
+      }
+
+      #announcement-version {
+        margin: 5px 0 12px;
+        color: #9b6b3f;
+        font: 700 12px sans-serif;
+        text-align: center;
+      }
+
+      #announcement-card ul {
+        margin: 0;
+        padding-left: 20px;
+        color: #765a42;
+        font: 13px/1.75 sans-serif;
+      }
+
+      #announcement-close {
+        width: 100%;
+        margin-top: 14px;
+        padding: 11px;
+        border: 0;
+        border-radius: 8px;
+        color: #fff;
+        background: #3c9063;
+        font: 800 15px sans-serif;
+      }
+
+      #name-dialog {
+        position: fixed;
+        inset: 0;
+        z-index: 3;
+        display: grid;
+        place-items: center;
+        padding: 24px;
+        background: rgba(2, 10, 20, 0.68);
+      }
+
+      #name-dialog[hidden] {
+        display: none;
+      }
+
+      #name-form {
+        width: min(100%, 320px);
+        padding: 22px;
+        border: 2px solid #e2c67d;
+        border-radius: 12px;
+        background: #f7edd7;
+        box-shadow: 0 16px 40px rgba(0, 0, 0, 0.34);
+        text-align: center;
+      }
+
+      #name-form h1 {
+        margin: 0 0 8px;
+        color: #5c3e25;
+        font: 700 22px sans-serif;
+      }
+
+      #name-form p {
+        margin: 0 0 16px;
+        color: #765a42;
+        font: 14px sans-serif;
+      }
+
+      #player-name {
+        width: 100%;
+        padding: 11px 12px;
+        border: 1px solid #b99b62;
+        border-radius: 7px;
+        outline: none;
+        color: #3c2c21;
+        background: #fffdf6;
+        font: 17px sans-serif;
+        text-align: center;
+      }
+
+      #name-submit {
+        width: 100%;
+        margin-top: 14px;
+        padding: 11px;
+        border: 0;
+        border-radius: 7px;
+        color: #fff;
+        background: #3c9063;
+        font: 700 15px sans-serif;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="game-canvas" aria-label="乌干达修仙游戏画布"></canvas>
+    <div id="account-bar"><span id="account-name"></span><button id="logout-button" type="button">退出</button></div>
+    <button id="rename-button" type="button">改名</button>
+    <div id="login-screen">
+      <form id="login-card">
+        <h1>乌干达修仙</h1>
+        <p>踏入草原秘境，与各路修士争夺仙榜之位</p>
+        <div id="login-form">
+          <input id="account-input" maxlength="16" autocomplete="username" placeholder="账号" required>
+          <input id="password-input" type="password" maxlength="24" autocomplete="current-password" placeholder="密码" required>
+          <button id="login-submit" type="submit">登录</button>
+          <button id="register-submit" type="button">注册账号</button>
+          <div id="login-message"></div>
+        </div>
+      </form>
+    </div>
+    <div id="announcement-screen" hidden>
+      <section id="announcement-card">
+        <h2>乌干达修仙更新公告</h2>
+        <div id="announcement-version">v0.2.0 · 草原演武版本</div>
+        <ul>
+          <li>新增真实账号注册、登录和退出。</li>
+          <li>新增实时仙榜，记录玩家积分与胜负。</li>
+          <li>新增 PVP 草原演武场体验入口。</li>
+          <li>新增装备强化，最高可提升至 +15。</li>
+          <li>优化神品装备金色发光特效。</li>
+          <li>新增四套关卡音乐与战斗对话。</li>
+          <li>修复墨镜潮服、月兔礼装透明背景。</li>
+        </ul>
+        <button id="announcement-close" type="button">进入游戏</button>
+      </section>
+    </div>
+    <div id="name-dialog" role="dialog" aria-modal="true" aria-labelledby="name-title" hidden>
+      <form id="name-form">
+        <h1 id="name-title">给主角取个名字</h1>
+        <p>昵称会保存在当前设备，最多 8 个字。</p>
+        <input id="player-name" name="playerName" maxlength="8" autocomplete="nickname" placeholder="请输入昵称" required>
+        <button id="name-submit" type="submit">确认名字</button>
+      </form>
+    </div>
+    <script>
+      (function () {
+        const accountKey = "uganda-current-account";
+        const loginScreen = document.getElementById("login-screen");
+        const loginCard = document.getElementById("login-card");
+        const accountInput = document.getElementById("account-input");
+        const passwordInput = document.getElementById("password-input");
+        const registerButton = document.getElementById("register-submit");
+        const loginMessage = document.getElementById("login-message");
+        const accountName = document.getElementById("account-name");
+        const logoutButton = document.getElementById("logout-button");
+        const announcementScreen = document.getElementById("announcement-screen");
+        const announcementClose = document.getElementById("announcement-close");
+        const tokenKey = "uganda-session-token";
+        const announcementKey = "uganda-announcement-v0.2.0";
+        const offlinePreview = location.protocol === "file:";
+
+        function setMessage(message) {
+          loginMessage.textContent = message || "";
+        }
+
+        function showAnnouncement() {
+          if (localStorage.getItem(announcementKey)) return;
+          announcementScreen.hidden = false;
+        }
+
+        async function authenticate(endpoint) {
+          const account = accountInput.value.trim().slice(0, 16);
+          const password = passwordInput.value.trim();
+          if (!account || !password) return;
+          if (offlinePreview) {
+            localStorage.setItem(accountKey, account);
+            localStorage.setItem(tokenKey, "offline-preview");
+            location.reload();
+            return;
+          }
+          setMessage("正在连接服务器...");
+          const response = await fetch(endpoint, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ username: account, password })
+          });
+          const result = await response.json();
+          if (!response.ok || !result.ok) throw new Error(result.error || "请求失败");
+          localStorage.setItem(accountKey, result.user.username);
+          localStorage.setItem(tokenKey, result.token);
+          location.reload();
+        }
+
+        async function restoreSession() {
+          const token = localStorage.getItem(tokenKey);
+          if (!token) return;
+          if (offlinePreview) {
+            const account = localStorage.getItem(accountKey);
+            if (account) {
+              accountName.textContent = `${account} · 离线预览`;
+              loginScreen.hidden = true;
+              showAnnouncement();
+            }
+            return;
+          }
+          try {
+            const response = await fetch("/api/auth/me", { headers: { Authorization: `Bearer ${token}` } });
+            const result = await response.json();
+            if (!response.ok || !result.ok) throw new Error(result.error || "登录已过期");
+            localStorage.setItem(accountKey, result.user.username);
+            accountName.textContent = result.user.username;
+            loginScreen.hidden = true;
+            showAnnouncement();
+          } catch (error) {
+            localStorage.removeItem(accountKey);
+            localStorage.removeItem(tokenKey);
+            setMessage(error.message);
+          }
+        }
+
+        loginCard.addEventListener("submit", (event) => {
+          event.preventDefault();
+          authenticate("/api/auth/login").catch((error) => setMessage(error.message));
+        });
+        registerButton.addEventListener("click", () => {
+          authenticate("/api/auth/register").catch((error) => setMessage(error.message));
+        });
+        logoutButton.addEventListener("click", async () => {
+          const token = localStorage.getItem(tokenKey);
+          if (token && !offlinePreview) {
+            await fetch("/api/auth/logout", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }, body: "{}" }).catch(() => {});
+          }
+          localStorage.removeItem(accountKey);
+          localStorage.removeItem(tokenKey);
+          location.reload();
+        });
+        announcementClose.addEventListener("click", () => {
+          localStorage.setItem(announcementKey, "shown");
+          announcementScreen.hidden = true;
+        });
+        restoreSession();
+
+        function showError(title, detail) {
+          const panel = document.createElement("pre");
+          panel.style.cssText = [
+            "position:fixed",
+            "inset:12px",
+            "z-index:9999",
+            "margin:0",
+            "padding:16px",
+            "border:2px solid #d4a755",
+            "border-radius:12px",
+            "background:#f7edd7",
+            "color:#5c3e25",
+            "white-space:pre-wrap",
+            "font:14px/1.5 monospace",
+            "overflow:auto"
+          ].join(";");
+          panel.textContent = title + "\n" + detail;
+          document.body.appendChild(panel);
+        }
+        window.addEventListener("error", (event) => {
+          showError("页面脚本错误", `${event.message}\n${event.filename}:${event.lineno}:${event.colno}`);
+        });
+        window.addEventListener("unhandledrejection", (event) => {
+          showError("未处理的异步错误", String(event.reason || event.detail || event));
+        });
+      }());
+    </script>
+    <script src="web/wx-shim.js"></script>
+    <script src="web-game.bundle.js"></script>
+  </body>
+</html>

@@ -1,0 +1,114 @@
+{
+  "appid": "wx1a305a83fbd149c4",
+  "compileType": "game",
+  "projectname": "wechat-roguelike",
+  "setting": {
+    "es6": true,
+    "minified": false,
+    "urlCheck": false,
+    "postcss": false,
+    "compileWorklet": false,
+    "uglifyFileName": false,
+    "uploadWithSourceMap": true,
+    "enhance": false,
+    "packNpmManually": false,
+    "packNpmRelationList": [],
+    "minifyWXSS": true,
+    "minifyWXML": true,
+    "localPlugins": false,
+    "disableUseStrict": false,
+    "useCompilerPlugins": false,
+    "condition": false,
+    "swc": false,
+    "disableSWC": true,
+    "babelSetting": {
+      "ignore": [],
+      "disablePlugins": [],
+      "outputPath": ""
+    }
+  },
+  "simulatorPluginLibVersion": {},
+  "packOptions": {
+    "ignore": [
+      {
+        "type": "file",
+        "value": "assets/images/heroes/alchemist.png"
+      },
+      {
+        "type": "file",
+        "value": "assets/images/heroes/assassin.png"
+      },
+      {
+        "type": "file",
+        "value": "assets/images/heroes/berserker.png"
+      },
+      {
+        "type": "file",
+        "value": "assets/images/heroes/dancer.png"
+      },
+      {
+        "type": "file",
+        "value": "assets/images/heroes/engineer.png"
+      },
+      {
+        "type": "file",
+        "value": "assets/images/heroes/frost.png"
+      },
+      {
+        "type": "file",
+        "value": "assets/images/heroes/guardian.png"
+      },
+      {
+        "type": "file",
+        "value": "assets/images/heroes/mage.png"
+      },
+      {
+        "type": "file",
+        "value": "assets/images/heroes/monk.png"
+      },
+      {
+        "type": "file",
+        "value": "assets/images/heroes/priest.png"
+      },
+      {
+        "type": "file",
+        "value": "assets/images/heroes/ranger.png"
+      },
+      {
+        "type": "file",
+        "value": "assets/images/heroes/swordsman.png"
+      },
+      {
+        "type": "file",
+        "value": "index.html"
+      },
+      {
+        "type": "file",
+        "value": "web-game.bundle.js"
+      },
+      {
+        "type": "folder",
+        "value": "web"
+      },
+      {
+        "type": "folder",
+        "value": "tools"
+      },
+      {
+        "type": "folder",
+        "value": "web-dist"
+      },
+      {
+        "type": "folder",
+        "value": "tmp"
+      },
+      {
+        "type": "file",
+        "value": "web-dist.zip"
+      }
+    ],
+    "include": []
+  },
+  "isGameTourist": false,
+  "editorSetting": {}
+}

@@ -205,6 +205,12 @@
       }
       return apiRequest("/api/leaderboard").then((result) => result.entries);
     },
+    fetchPvpOpponents() {
+      if (global.location.protocol === "file:") {
+        return Promise.resolve([]);
+      }
+      return apiRequest("/api/pvp/opponents").then((result) => result.opponents || []);
+    },
     getCurrentAccount
   };
 

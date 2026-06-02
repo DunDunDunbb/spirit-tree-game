@@ -117,6 +117,36 @@ def public_user(row: sqlite3.Row) -> dict[str, object]:
     }
 
 
+def pvp_realm(score: int) -> str:
+    if score >= 2600:
+        return "筑基后期"
+    if score >= 2100:
+        return "筑基中期"
+    if score >= 1600:
+        return "筑基初期"
+    if score >= 1200:
+        return "炼气九层"
+    return "炼气七层"
+
+
+def pvp_opponent(row: sqlite3.Row, index: int) -> dict[str, object]:
+    score = max(800, min(50_000, int(row["rank_score"])))
+    wins = max(0, int(row["pvp_wins"]))
+    losses = max(0, int(row["pvp_losses"]))
+    power = max(900, min(50_000, score + wins * 35 - losses * 18))
+    return {
+        "username": row["username"],
+        "name": row["display_name"],
+        "realm": pvp_realm(score),
+        "power": power,
+        "hp": max(320, min(5000, 260 + power // 4)),
+        "atk": max(36, min(420, 28 + power // 90)),
+        "spd": max(110, min(220, 118 + wins * 2 - losses)),
+        "type": "brute" if index % 3 == 1 else "wisp" if index % 3 == 2 else "imp",
+        "quote": f"{row['display_name']} 前来演武切磋。",
+    }
+
+
 class UgandaHandler(SimpleHTTPRequestHandler):
     server_version = "UgandaCultivation/0.1"
 
@@ -208,6 +238,20 @@ class UgandaHandler(SimpleHTTPRequestHandler):
                         for row in rows
                     ]
                     return self.send_json(HTTPStatus.OK, {"ok": True, "entries": entries})
+                if path == "/api/pvp/opponents":
+                    current = self.current_user(connection)
+                    rows = connection.execute(
+                        """
+                        SELECT username, display_name, rank_score, pvp_wins, pvp_losses
+                        FROM users
+                        WHERE id != ?
+                        ORDER BY updated_at DESC, rank_score DESC
+                        LIMIT 8
+                        """,
+                        (current["id"],),
+                    ).fetchall()
+                    opponents = [pvp_opponent(row, index) for index, row in enumerate(rows)]
+                    return self.send_json(HTTPStatus.OK, {"ok": True, "opponents": opponents})
                 self.send_json(HTTPStatus.NOT_FOUND, {"ok": False, "error": "接口不存在"})
         except PermissionError as error:
             self.send_json(HTTPStatus.UNAUTHORIZED, {"ok": False, "error": str(error)})
