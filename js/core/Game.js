@@ -1,5 +1,6 @@
 const MAIN_CHARACTER = require("../config/characters");
 const { createEquipment, getSynthesisCandidate, synthesizeEquipment } = require("../config/equipment");
+const { getSignInReward, SIGN_IN_REWARDS } = require("../config/signin");
 const { getSceneForStage } = require("../config/scenes");
 const { getBossForStage } = require("../config/bosses");
 const { getBattleMultiplier, getEnemyAttackMultiplier } = require("../config/difficulty");
@@ -17,6 +18,8 @@ const GAME_STATE = {
   BATTLE_RESULT: "battle-result",
   SHOP: "shop",
   QUICK_DRAW: "quick-draw",
+  INVENTORY: "inventory",
+  SIGN_IN: "sign-in",
   RANKING: "ranking",
   PVP: "pvp",
   ENHANCE: "enhance"
@@ -67,6 +70,9 @@ class Game {
     this.shopMessage = "";
     this.quickDrawResults = [];
     this.quickDrawSynthesis = null;
+    this.inventoryPage = 0;
+    this.inspectedItem = null;
+    this.inspectedItemSource = "";
     this.enhanceSlot = "";
     this.pvpOpponents = this.createPvpOpponents();
     this.pvpStatus = "本地演示匹配";
@@ -177,6 +183,10 @@ class Game {
       this.ui.renderShop(this.profile, this.shopMessage);
     } else if (this.state === GAME_STATE.QUICK_DRAW) {
       this.ui.renderQuickDraw(this.profile, this.quickDrawResults, this.visualTime);
+    } else if (this.state === GAME_STATE.INVENTORY) {
+      this.ui.renderInventory(this.profile, this.inventoryPage);
+    } else if (this.state === GAME_STATE.SIGN_IN) {
+      this.ui.renderSignIn(this.profile, SIGN_IN_REWARDS, this.getTodayKey());
     } else if (this.state === GAME_STATE.RANKING) {
       this.ui.renderRanking(this.profile, this.rankingEntries, this.rankingStatus);
     } else if (this.state === GAME_STATE.PVP) {
@@ -188,6 +198,9 @@ class Game {
       this.ui.renderTutorial(this.tutorialStep);
     } else if (this.dialogue) {
       this.ui.renderHeroDialogue(this.profile, this.dialogue.lines[this.dialogue.index]);
+    }
+    if (this.inspectedItem) {
+      this.ui.renderItemInspect(this.profile, this.inspectedItem, this.inspectedItemSource);
     }
   }
 
@@ -206,7 +219,7 @@ class Game {
   equipLoot() {
     if (!this.currentLoot) return;
     const oldItem = this.profile.getEquipped(this.currentLoot.slot);
-    if (oldItem) this.profile.coins += oldItem.price;
+    if (oldItem) this.profile.addToInventory(oldItem);
     this.profile.equip(this.currentLoot);
     this.currentLoot = null;
     this.state = GAME_STATE.HOME;
@@ -224,15 +237,26 @@ class Game {
     this.saveProfile();
   }
 
+  stashLoot() {
+    if (!this.currentLoot) return;
+    this.profile.addToInventory(this.currentLoot);
+    this.currentLoot = null;
+    this.state = GAME_STATE.HOME;
+    this.showToast("装备已放入背包");
+    this.saveProfile();
+  }
+
   openQuickDraw() {
     this.quickDrawResults = [];
     this.quickDrawSynthesis = null;
+    this.inspectedItem = null;
+    this.inspectedItemSource = "";
     this.state = GAME_STATE.QUICK_DRAW;
   }
 
   closeQuickDraw() {
     if (this.quickDrawResults.length) {
-      this.sellQuickDraw();
+      this.resolveQuickDraw();
       return;
     }
     this.state = GAME_STATE.HOME;
@@ -264,6 +288,8 @@ class Game {
     const coins = this.quickDrawResults.reduce((total, item) => total + item.price, 0);
     this.profile.coins += coins;
     this.quickDrawResults = [];
+    this.inspectedItem = null;
+    this.inspectedItemSource = "";
     this.state = GAME_STATE.HOME;
     this.showToast(`批量分解完成，灵石 +${coins}`);
     this.saveProfile();
@@ -916,6 +942,926 @@ class Game {
       const opponentIndex = this.ui.getPvpOpponentIndexAt(x, y);
       if (opponentIndex >= 0 && opponentIndex < this.pvpOpponents.length) this.startPvpBattle(opponentIndex);
       else if (opponentIndex >= 0) this.pvpStatus = "正在匹配实时玩家，请稍候";
+      else if (this.ui.isSimpleModalCloseButton(x, y, 410)) this.state = GAME_STATE.HOME;
+    } else if (this.state === GAME_STATE.ENHANCE) {
+      if (this.ui.isEnhanceActionButton(x, y)) this.enhanceSelectedEquipment();
+      else if (this.ui.isSimpleModalCloseButton(x, y, 340)) this.state = GAME_STATE.HOME;
+    } else if (this.state === GAME_STATE.BATTLE_RESULT) {
+      if (this.ui.isContinueButton(x, y) && this.battle.victory && !this.battle.isPvp) this.startBattle();
+      else if (this.ui.isResultButton(x, y)) {
+        this.state = GAME_STATE.HOME;
+        this.audio.playBgm("home");
+      }
+    }
+  }
+
+  getTodayKey() {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = `${now.getMonth() + 1}`.padStart(2, "0");
+    const day = `${now.getDate()}`.padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  }
+
+  openInventory() {
+    this.inventoryPage = 0;
+    this.state = GAME_STATE.INVENTORY;
+  }
+
+  changeInventoryPage(offset) {
+    const totalPages = Math.max(1, Math.ceil(this.profile.getInventory().length / 6));
+    this.inventoryPage = (this.inventoryPage + offset + totalPages) % totalPages;
+  }
+
+  closeInventory() {
+    this.state = GAME_STATE.HOME;
+  }
+
+  openSignIn() {
+    this.state = GAME_STATE.SIGN_IN;
+  }
+
+  closeSignIn() {
+    this.state = GAME_STATE.HOME;
+  }
+
+  canClaimSignIn() {
+    return this.profile.signInClaimedDays < SIGN_IN_REWARDS.length && this.profile.signInLastDate !== this.getTodayKey();
+  }
+
+  applySignInReward(reward) {
+    if (!reward) return "无奖励";
+    if (reward.type === "peaches") {
+      this.profile.peaches += reward.amount || 0;
+      return `${reward.label}`;
+    }
+    if (reward.type === "coins") {
+      this.profile.coins += reward.amount || 0;
+      return `${reward.label}`;
+    }
+    if (reward.type === "cultivation") {
+      this.profile.cultivation += reward.amount || 0;
+      return `${reward.label}`;
+    }
+    if (reward.type === "cosmetic") {
+      const item = this.profile.unlockCosmetic(reward.cosmeticId);
+      return item ? `解锁皮肤 ${item.name}` : reward.label;
+    }
+    if (reward.type === "equipment") {
+      const item = typeof reward.item === "function" ? reward.item() : null;
+      if (item) {
+        this.profile.addToInventory(item);
+        return `获得装备 ${item.name}`;
+      }
+    }
+    return reward.label || "奖励已发放";
+  }
+
+  claimDailySignIn() {
+    if (this.profile.signInClaimedDays >= SIGN_IN_REWARDS.length) {
+      this.showToast("30日签到已全部完成");
+      return;
+    }
+    if (!this.canClaimSignIn()) {
+      this.showToast("今日已签到，请明天再来");
+      return;
+    }
+    const reward = getSignInReward(this.profile.signInClaimedDays);
+    const resultText = this.applySignInReward(reward);
+    this.profile.signInClaimedDays += 1;
+    this.profile.signInLastDate = this.getTodayKey();
+    this.showToast(`签到成功：${resultText}`);
+    this.audio.playSfx("equip");
+    this.saveProfile();
+  }
+
+  inspectItem(item, source) {
+    if (!item) return;
+    this.inspectedItem = item;
+    this.inspectedItemSource = source;
+  }
+
+  closeInspectedItem() {
+    this.inspectedItem = null;
+    this.inspectedItemSource = "";
+  }
+
+  equipLoot() {
+    if (!this.currentLoot) return;
+    const oldItem = this.profile.getEquipped(this.currentLoot.slot);
+    if (oldItem) this.profile.addToInventory(oldItem);
+    this.profile.equip(this.currentLoot);
+    this.currentLoot = null;
+    this.state = GAME_STATE.HOME;
+    this.showToast(oldItem ? "新装备已穿戴，旧装备已放入背包" : "装备已穿戴");
+    this.audio.playSfx("equip");
+    this.saveProfile();
+  }
+
+  sellLoot() {
+    if (!this.currentLoot) return;
+    this.profile.coins += this.currentLoot.price;
+    this.currentLoot = null;
+    this.state = GAME_STATE.HOME;
+    this.showToast("装备已分解为灵石");
+    this.saveProfile();
+  }
+
+  stashLoot() {
+    if (!this.currentLoot) return;
+    this.profile.addToInventory(this.currentLoot);
+    this.currentLoot = null;
+    this.state = GAME_STATE.HOME;
+    this.showToast("装备已放入背包");
+    this.saveProfile();
+  }
+
+  openQuickDraw() {
+    this.quickDrawResults = [];
+    this.quickDrawSynthesis = null;
+    this.closeInspectedItem();
+    this.state = GAME_STATE.QUICK_DRAW;
+  }
+
+  closeQuickDraw() {
+    if (this.quickDrawResults.length) {
+      this.resolveQuickDraw();
+      return;
+    }
+    this.closeInspectedItem();
+    this.state = GAME_STATE.HOME;
+    this.quickDrawSynthesis = null;
+  }
+
+  sellQuickDraw() {
+    if (!this.quickDrawResults.length) return;
+    const coins = this.quickDrawResults.reduce((total, item) => total + item.price, 0);
+    this.profile.coins += coins;
+    this.quickDrawResults = [];
+    this.closeInspectedItem();
+    this.state = GAME_STATE.HOME;
+    this.showToast(`批量分解完成，灵石 +${coins}`);
+    this.saveProfile();
+  }
+
+  resolveQuickDraw() {
+    if (!this.quickDrawResults.length) return;
+    const storedItems = this.quickDrawResults.filter((item) => item.rarity === "legend");
+    const soldItems = this.quickDrawResults.filter((item) => item.rarity !== "legend");
+    storedItems.forEach((item) => this.profile.addToInventory(item));
+    const coins = soldItems.reduce((total, item) => total + item.price, 0);
+    this.profile.coins += coins;
+    this.quickDrawResults = [];
+    this.closeInspectedItem();
+    this.state = GAME_STATE.HOME;
+    this.showToast(`已收纳 ${storedItems.length} 件金装，其余分解获得 ${coins} 灵石`);
+    this.saveProfile();
+  }
+
+  equipBestQuickDraw() {
+    if (!this.quickDrawResults.length) return;
+    const bestBySlot = new Map();
+    this.quickDrawResults.forEach((item) => {
+      const comparison = this.profile.getEquipmentComparison(item);
+      if (comparison.powerDelta <= 0) return;
+      const current = bestBySlot.get(item.slot);
+      if (!current || item.power > current.item.power) {
+        bestBySlot.set(item.slot, { item, comparison });
+      }
+    });
+    const equippedIds = new Set();
+    let equippedCount = 0;
+    bestBySlot.forEach(({ item }) => {
+      const oldItem = this.profile.getEquipped(item.slot);
+      if (oldItem) this.profile.addToInventory(oldItem);
+      this.profile.equip(item);
+      equippedIds.add(item.id);
+      equippedCount += 1;
+    });
+    const remaining = this.quickDrawResults.filter((item) => !equippedIds.has(item.id));
+    const storedItems = remaining.filter((item) => item.rarity === "legend");
+    const soldItems = remaining.filter((item) => item.rarity !== "legend");
+    storedItems.forEach((item) => this.profile.addToInventory(item));
+    const coins = soldItems.reduce((total, item) => total + item.price, 0);
+    this.profile.coins += coins;
+    this.quickDrawResults = [];
+    this.closeInspectedItem();
+    this.state = GAME_STATE.HOME;
+    this.showToast(`已装备 ${equippedCount} 件最强装备，保存 ${storedItems.length} 件金装，获得 ${coins} 灵石`);
+    this.audio.playSfx("equip");
+    this.saveProfile();
+  }
+
+  openQuickDrawItem(index) {
+    const item = this.quickDrawResults[index];
+    if (item) this.inspectItem(item, "quick-draw");
+  }
+
+  storeInspectedQuickDrawItem() {
+    if (!this.inspectedItem) return;
+    this.quickDrawResults = this.quickDrawResults.filter((item) => item.id !== this.inspectedItem.id);
+    this.profile.addToInventory(this.inspectedItem);
+    this.showToast("装备已移入背包");
+    this.closeInspectedItem();
+    this.saveProfile();
+  }
+
+  sellInspectedQuickDrawItem() {
+    if (!this.inspectedItem) return;
+    this.quickDrawResults = this.quickDrawResults.filter((item) => item.id !== this.inspectedItem.id);
+    this.profile.coins += this.inspectedItem.price || 0;
+    this.showToast(`已分解 ${this.inspectedItem.name}`);
+    this.closeInspectedItem();
+    this.saveProfile();
+  }
+
+  equipInspectedQuickDrawItem() {
+    if (!this.inspectedItem) return;
+    const oldItem = this.profile.getEquipped(this.inspectedItem.slot);
+    if (oldItem) this.profile.addToInventory(oldItem);
+    this.profile.equip(this.inspectedItem);
+    this.quickDrawResults = this.quickDrawResults.filter((item) => item.id !== this.inspectedItem.id);
+    this.showToast("已穿戴选中装备");
+    this.audio.playSfx("equip");
+    this.closeInspectedItem();
+    this.saveProfile();
+  }
+
+  openInventoryItem(index) {
+    const items = this.profile.getInventory().slice(this.inventoryPage * 6, this.inventoryPage * 6 + 6);
+    const item = items[index];
+    if (item) this.inspectItem(item, "inventory");
+  }
+
+  sellInspectedInventoryItem() {
+    if (!this.inspectedItem) return;
+    this.profile.sellInventoryItem(this.inspectedItem.id);
+    this.showToast(`已出售 ${this.inspectedItem.name}`);
+    this.closeInspectedItem();
+    this.saveProfile();
+  }
+
+  equipInspectedInventoryItem() {
+    if (!this.inspectedItem) return;
+    this.profile.equipFromInventory(this.inspectedItem.id);
+    this.showToast("已从背包装备");
+    this.audio.playSfx("equip");
+    this.closeInspectedItem();
+    this.saveProfile();
+  }
+
+  handleInspectedItemAction(action) {
+    if (!action) return false;
+    if (action === "close") {
+      this.closeInspectedItem();
+      return true;
+    }
+    if (this.inspectedItemSource === "quick-draw") {
+      if (action === "equip") this.equipInspectedQuickDrawItem();
+      else if (action === "stash") this.storeInspectedQuickDrawItem();
+      else if (action === "sell") this.sellInspectedQuickDrawItem();
+      return true;
+    }
+    if (this.inspectedItemSource === "inventory") {
+      if (action === "equip") this.equipInspectedInventoryItem();
+      else if (action === "sell") this.sellInspectedInventoryItem();
+      else if (action === "stash") this.closeInspectedItem();
+      return true;
+    }
+    return false;
+  }
+
+  createPvpOpponents() {
+    return [
+      { name: "草原悍匪·阿塔", realm: "炼气九层", power: 1320, hp: 390, atk: 43, spd: 148, quote: "你的仙桃，归我了。" },
+      { name: "黑风寨·大头领", realm: "筑基初期", power: 1760, hp: 510, atk: 55, spd: 136, quote: "让我看看你能撑几招。" },
+      { name: "赤霄真人", realm: "筑基中期", power: 2180, hp: 620, atk: 64, spd: 154, quote: "草原之上，强者为尊。" },
+      { name: "月坛剑客", realm: "筑基后期", power: 2640, hp: 730, atk: 72, spd: 168, quote: "此剑，只问胜负。" }
+    ];
+  }
+
+  chopTree() {
+    if (!this.profile.chopTree()) {
+      this.showToast("仙桃不足，挑战关卡可获得仙桃");
+      return;
+    }
+    this.treePulse = 1;
+    this.pendingLoot = createEquipment(this.profile.treeLevel);
+    this.profile.discover(this.pendingLoot);
+    this.homeAction = 0.48;
+    this.audio.playSfx("chop");
+  }
+
+  explore() {
+    if (!this.profile.explore()) {
+      this.showToast("游历次数不足，挑战胜利后可恢复");
+      return;
+    }
+    this.audio.playSfx("explore");
+    const roll = Math.random();
+    if (roll < 0.38) {
+      this.currentLoot = createEquipment(this.profile.treeLevel + 1);
+      this.profile.discover(this.currentLoot);
+      this.state = GAME_STATE.LOOT;
+      this.saveProfile();
+      return;
+    }
+    if (roll < 0.68) {
+      const peaches = 2 + Math.floor(Math.random() * 4);
+      this.profile.peaches += peaches;
+      this.showToast(`游历奇遇：获得仙桃 ${peaches}`);
+    } else if (roll < 0.9) {
+      const coins = 8 + this.profile.stage * 2;
+      this.profile.coins += coins;
+      this.showToast(`发现灵脉：获得灵石 ${coins}`);
+    } else {
+      const cultivation = 18 + this.profile.treeLevel * 3;
+      this.profile.cultivation += cultivation;
+      this.showToast(`高人指点：修为增加 ${cultivation}`);
+    }
+    this.saveProfile();
+  }
+
+  selectSkill(index) {
+    const skill = this.profile.getSkills()[index];
+    if (!skill || !this.profile.setSkill(skill.id)) return;
+    this.showToast(`已装备技能：${skill.name}`);
+    this.saveProfile();
+  }
+
+  openShop() {
+    this.shopMessage = "点击皮肤可直接用灵石购买或换上";
+    this.state = GAME_STATE.SHOP;
+  }
+
+  openRanking() {
+    this.state = GAME_STATE.RANKING;
+    this.rankingEntries = [];
+    this.rankingStatus = "正在读取实时仙榜...";
+    if (typeof wx.fetchLeaderboard !== "function") {
+      this.rankingStatus = "当前运行环境未连接排行榜服务";
+      return;
+    }
+    wx.fetchLeaderboard()
+      .then((entries) => {
+        this.rankingEntries = entries;
+        this.rankingStatus = typeof location !== "undefined" && location.protocol === "file:"
+          ? "离线预览榜单 · 联网后显示实时玩家"
+          : entries.length ? "实时玩家榜单" : "暂无玩家记录";
+      })
+      .catch((error) => {
+        this.rankingStatus = `仙榜读取失败：${error.message}`;
+      });
+  }
+
+  openPvp() {
+    this.state = GAME_STATE.PVP;
+    this.pvpOpponents = [];
+    this.pvpStatus = "正在读取实时玩家...";
+    if (typeof wx.fetchPvpOpponents !== "function") {
+      this.pvpOpponents = this.createPvpOpponents();
+      this.pvpStatus = "本地演示匹配";
+      return;
+    }
+    wx.fetchPvpOpponents()
+      .then((opponents) => {
+        if (opponents.length) {
+          this.pvpOpponents = opponents;
+          this.pvpStatus = "实时玩家匹配";
+        } else {
+          this.pvpOpponents = this.createPvpOpponents();
+          this.pvpStatus = "暂无其他玩家，已切换本地演示";
+        }
+      })
+      .catch((error) => {
+        this.pvpOpponents = this.createPvpOpponents();
+        this.pvpStatus = `实时玩家读取失败：${error.message}`;
+      });
+  }
+
+  enhanceSelectedEquipment() {
+    const result = this.profile.enhanceEquipment(this.enhanceSlot);
+    if (!result.ok) {
+      this.showToast(result.reason === "coins"
+        ? `灵石不足，需要 ${result.cost}`
+        : result.reason === "failed"
+          ? `强化失败，消耗 ${result.paid} 灵石`
+          : result.reason === "max"
+            ? "装备已强化至最高等级"
+            : "该部位尚未装备");
+      if (result.reason === "failed") {
+        this.audio.playSfx("dodge");
+        this.saveProfile();
+      }
+      return;
+    }
+    this.showToast(`${result.item.name} 强化至 +${result.item.enhanceLevel}，消耗 ${result.paid} 灵石`);
+    this.audio.playSfx("equip");
+    this.saveProfile();
+  }
+
+  completeTutorial() {
+    this.profile.tutorialCompleted = true;
+    this.saveProfile();
+    this.showToast("新手引导完成，开始修行吧");
+  }
+
+  getHeroDialogueLines() {
+    const lines = [
+      "灵树的气息很安稳。再砍几次树，也许能找到更适合我们的装备。",
+      `我现在使用的是「${this.profile.character.skill.name}」。想换一种打法，就点上方的技能按钮。`,
+      `前方已经探索到第 ${this.profile.stage} 关。每逢五关都会遇到一名新的首领。`
+    ];
+    if (this.profile.peaches <= 5) {
+      lines.push("仙桃快不够了。先去游历，或者挑战关卡补充一些再继续砍树吧。");
+    } else {
+      lines.push(`我们还有 ${this.profile.peaches} 个仙桃，可以继续从灵树中寻找装备。`);
+    }
+    if (Object.keys(this.profile.equipment).length < 3) {
+      lines.push("身上的装备还不齐。先把六个部位慢慢补满，妖力会提升得更稳定。");
+    } else {
+      lines.push("装备已经逐渐成形。留意套装和会心、连击这些特殊属性，它们很重要。");
+    }
+    const skin = this.profile.getEquippedCosmetics().find((item) => item.type === "skin");
+    if (skin) lines.push(`今天穿的是「${skin.name}」。修仙也要讲究气势。`);
+    return lines;
+  }
+
+  getBattleDialogueLines() {
+    const skin = this.profile.getEquippedCosmetics().find((item) => item.type === "skin");
+    const lines = ["稳住气息，寻找破绽。", "灵树在指引我们。", "再来一招！"];
+    if (skin && skin.id === "streetwear") lines.push("墨镜一戴，谁也不爱。");
+    if (skin && skin.id === "wuxia") lines.push("云水一剑，破！");
+    if (skin && skin.id === "royal") lines.push("这就是王者的从容。");
+    if (skin && skin.id === "bunny") lines.push("月兔踏风，闪开！");
+    if (skin && skin.id === "nurse") lines.push("别担心，这点伤能治。");
+    if (skin && skin.id === "bocchi-shirt") lines.push("社恐归社恐，打架不能输。");
+    return lines;
+  }
+
+  cultivate() {
+    const cost = 12 + Math.floor(this.profile.cultivation / 45) * 4;
+    if (this.profile.coins < cost) {
+      this.showToast(`灵石不足，吐纳需要 ${cost}`);
+      return;
+    }
+    this.profile.coins -= cost;
+    this.profile.cultivation += 24 + this.profile.treeLevel * 3;
+    this.showToast("吐纳淬炼完成，修为提升");
+    this.saveProfile();
+  }
+
+  applySignInReward(reward) {
+    if (!reward) return "无奖励";
+    if (reward.type === "peaches") {
+      this.profile.peaches += reward.amount || 0;
+      return reward.label;
+    }
+    if (reward.type === "coins") {
+      this.profile.coins += reward.amount || 0;
+      return reward.label;
+    }
+    if (reward.type === "cultivation") {
+      this.profile.cultivation += reward.amount || 0;
+      return reward.label;
+    }
+    if (reward.type === "cosmetic") {
+      const item = this.profile.unlockCosmetic(reward.cosmeticId);
+      return item ? `解锁皮肤 ${item.name}` : reward.label;
+    }
+    if (reward.type === "equipment") {
+      const item = typeof reward.item === "function" ? reward.item() : null;
+      if (item) {
+        this.profile.addToInventory(item);
+        return `获得装备 ${item.name}`;
+      }
+    }
+    return reward.label || "奖励已发放";
+  }
+
+  claimDailySignIn() {
+    if (this.profile.signInClaimedDays >= SIGN_IN_REWARDS.length) {
+      this.showToast("30日签到已全部完成");
+      return;
+    }
+    if (!this.canClaimSignIn()) {
+      this.showToast("今日已签到，请明天再来");
+      return;
+    }
+    const reward = getSignInReward(this.profile.signInClaimedDays);
+    const resultText = this.applySignInReward(reward);
+    this.profile.signInClaimedDays += 1;
+    this.profile.signInLastDate = this.getTodayKey();
+    this.showToast(`签到成功：${resultText}`);
+    this.audio.playSfx("equip");
+    this.saveProfile();
+  }
+
+  equipLoot() {
+    if (!this.currentLoot) return;
+    const oldItem = this.profile.getEquipped(this.currentLoot.slot);
+    if (oldItem) this.profile.addToInventory(oldItem);
+    this.profile.equip(this.currentLoot);
+    this.currentLoot = null;
+    this.state = GAME_STATE.HOME;
+    this.showToast(oldItem ? "新装备已穿戴，旧装备已放入背包" : "装备已穿戴");
+    this.audio.playSfx("equip");
+    this.saveProfile();
+  }
+
+  sellLoot() {
+    if (!this.currentLoot) return;
+    this.profile.coins += this.currentLoot.price;
+    this.currentLoot = null;
+    this.state = GAME_STATE.HOME;
+    this.showToast("装备已分解为灵石");
+    this.saveProfile();
+  }
+
+  stashLoot() {
+    if (!this.currentLoot) return;
+    this.profile.addToInventory(this.currentLoot);
+    this.currentLoot = null;
+    this.state = GAME_STATE.HOME;
+    this.showToast("装备已放入背包");
+    this.saveProfile();
+  }
+
+  sellQuickDraw() {
+    if (!this.quickDrawResults.length) return;
+    const coins = this.quickDrawResults.reduce((total, item) => total + item.price, 0);
+    this.profile.coins += coins;
+    this.quickDrawResults = [];
+    this.closeInspectedItem();
+    this.state = GAME_STATE.HOME;
+    this.showToast(`批量分解完成，灵石 +${coins}`);
+    this.saveProfile();
+  }
+
+  resolveQuickDraw() {
+    if (!this.quickDrawResults.length) return;
+    const storedItems = this.quickDrawResults.filter((item) => item.rarity === "legend");
+    const soldItems = this.quickDrawResults.filter((item) => item.rarity !== "legend");
+    storedItems.forEach((item) => this.profile.addToInventory(item));
+    const coins = soldItems.reduce((total, item) => total + item.price, 0);
+    this.profile.coins += coins;
+    this.quickDrawResults = [];
+    this.closeInspectedItem();
+    this.state = GAME_STATE.HOME;
+    this.showToast(`已收纳 ${storedItems.length} 件金装，其余分解获得 ${coins} 灵石`);
+    this.saveProfile();
+  }
+
+  equipBestQuickDraw() {
+    if (!this.quickDrawResults.length) return;
+    const bestBySlot = new Map();
+    this.quickDrawResults.forEach((item) => {
+      const comparison = this.profile.getEquipmentComparison(item);
+      if (comparison.powerDelta <= 0) return;
+      const current = bestBySlot.get(item.slot);
+      if (!current || item.power > current.item.power) bestBySlot.set(item.slot, { item, comparison });
+    });
+    const equippedIds = new Set();
+    let equippedCount = 0;
+    bestBySlot.forEach(({ item }) => {
+      const oldItem = this.profile.getEquipped(item.slot);
+      if (oldItem) this.profile.addToInventory(oldItem);
+      this.profile.equip(item);
+      equippedIds.add(item.id);
+      equippedCount += 1;
+    });
+    const remaining = this.quickDrawResults.filter((item) => !equippedIds.has(item.id));
+    const storedItems = remaining.filter((item) => item.rarity === "legend");
+    const soldItems = remaining.filter((item) => item.rarity !== "legend");
+    storedItems.forEach((item) => this.profile.addToInventory(item));
+    const coins = soldItems.reduce((total, item) => total + item.price, 0);
+    this.profile.coins += coins;
+    this.quickDrawResults = [];
+    this.closeInspectedItem();
+    this.state = GAME_STATE.HOME;
+    this.showToast(`已装备 ${equippedCount} 件最强装备，保存 ${storedItems.length} 件金装，获得 ${coins} 灵石`);
+    this.audio.playSfx("equip");
+    this.saveProfile();
+  }
+
+  storeInspectedQuickDrawItem() {
+    if (!this.inspectedItem) return;
+    this.quickDrawResults = this.quickDrawResults.filter((item) => item.id !== this.inspectedItem.id);
+    this.profile.addToInventory(this.inspectedItem);
+    this.showToast("装备已移入背包");
+    this.closeInspectedItem();
+    this.saveProfile();
+  }
+
+  sellInspectedQuickDrawItem() {
+    if (!this.inspectedItem) return;
+    this.quickDrawResults = this.quickDrawResults.filter((item) => item.id !== this.inspectedItem.id);
+    this.profile.coins += this.inspectedItem.price || 0;
+    this.showToast(`已分解 ${this.inspectedItem.name}`);
+    this.closeInspectedItem();
+    this.saveProfile();
+  }
+
+  equipInspectedQuickDrawItem() {
+    if (!this.inspectedItem) return;
+    const oldItem = this.profile.getEquipped(this.inspectedItem.slot);
+    if (oldItem) this.profile.addToInventory(oldItem);
+    this.profile.equip(this.inspectedItem);
+    this.quickDrawResults = this.quickDrawResults.filter((item) => item.id !== this.inspectedItem.id);
+    this.showToast("已穿戴选中装备");
+    this.audio.playSfx("equip");
+    this.closeInspectedItem();
+    this.saveProfile();
+  }
+
+  sellInspectedInventoryItem() {
+    if (!this.inspectedItem) return;
+    this.profile.sellInventoryItem(this.inspectedItem.id);
+    this.showToast(`已出售 ${this.inspectedItem.name}`);
+    this.closeInspectedItem();
+    this.saveProfile();
+  }
+
+  equipInspectedInventoryItem() {
+    if (!this.inspectedItem) return;
+    this.profile.equipFromInventory(this.inspectedItem.id);
+    this.showToast("已从背包装备");
+    this.audio.playSfx("equip");
+    this.closeInspectedItem();
+    this.saveProfile();
+  }
+
+  startBattle() {
+    const stage = this.profile.stage;
+    const template = ENEMIES[(stage - 1) % ENEMIES.length];
+    const isBoss = stage % 5 === 0;
+    const boss = isBoss ? getBossForStage(stage) : null;
+    const baseTemplate = boss ? ENEMIES.find((enemy) => enemy.type === boss.type) || template : template;
+    const multiplier = Math.min(1e12, getBattleMultiplier(stage, isBoss));
+    const attackMultiplier = Math.min(1e12, getEnemyAttackMultiplier(stage, isBoss));
+    const stats = this.profile.getStats();
+    const scene = getSceneForStage(stage);
+    const enemy = {
+      ...baseTemplate,
+      ...(boss || {}),
+      name: boss ? `${boss.title} · ${boss.name}` : baseTemplate.name,
+      maxHp: Math.round(baseTemplate.hp * multiplier * (boss ? boss.hpFactor : 1)),
+      hp: Math.round(baseTemplate.hp * multiplier * (boss ? boss.hpFactor : 1)),
+      atk: Math.round(baseTemplate.atk * attackMultiplier * (boss ? boss.atkFactor : 1)),
+      isBoss
+    };
+    this.battle = {
+      stage,
+      scene,
+      enemy,
+      heroMaxHp: stats.hp,
+      heroHp: stats.hp,
+      heroDisplayedHp: stats.hp,
+      heroAttack: stats.atk,
+      heroCrit: stats.crit,
+      heroCombo: stats.combo,
+      heroDodge: stats.dodge,
+      heroLifesteal: stats.lifesteal,
+      heroCounter: stats.counter,
+      heroAttackTimer: 0.3,
+      skillTimer: 1.7,
+      skillAction: 0,
+      enemyAttackTimer: 0.85,
+      enemyDisplayedHp: enemy.hp,
+      message: "双方正在交手",
+      introTime: isBoss ? 1.25 : 0.72,
+      elapsed: 0,
+      heroAction: 0,
+      enemyAction: 0,
+      effects: [],
+      hitStop: 0,
+      screenShake: 0,
+      screenFlash: 0,
+      victory: false,
+      rewardPeaches: 0,
+      rewardCoins: 0
+    };
+    this.state = GAME_STATE.BATTLE;
+    this.audio.playStageBgm(stage, isBoss);
+  }
+
+  startPvpBattle(index) {
+    const opponent = this.pvpOpponents[index];
+    if (!opponent) return;
+    const stats = this.profile.getStats();
+    const heroFair = this.getFairPvpStats({
+      rankScore: this.profile.rankScore,
+      pvpWins: this.profile.pvpWins,
+      pvpLosses: this.profile.pvpLosses,
+      rawStats: stats
+    });
+    const enemyFair = this.getFairPvpStats(opponent);
+    const scene = getSceneForStage(index + 2);
+    this.battle = {
+      stage: this.profile.stage,
+      scene,
+      isPvp: true,
+      fairMode: true,
+      enemy: { ...opponent, ...enemyFair, type: opponent.type || (index % 2 ? "brute" : "imp"), sprite: opponent.avatarSprite || "hero-main-character", maxHp: enemyFair.hp, hp: enemyFair.hp, isBoss: false },
+      heroMaxHp: heroFair.hp,
+      heroHp: heroFair.hp,
+      heroDisplayedHp: heroFair.hp,
+      heroAttack: heroFair.atk,
+      heroCrit: heroFair.crit,
+      heroCombo: heroFair.combo,
+      heroDodge: heroFair.dodge,
+      heroLifesteal: heroFair.lifesteal,
+      heroCounter: heroFair.counter,
+      heroAttackInterval: this.getAttackInterval(heroFair.spd, 0.82),
+      enemyAttackInterval: this.getAttackInterval(enemyFair.spd, 0.98),
+      heroAttackTimer: 0.3,
+      skillTimer: 1.7,
+      skillAction: 0,
+      enemyAttackTimer: 0.85,
+      enemyDisplayedHp: enemyFair.hp,
+      message: "演武场切磋开始",
+      introTime: 0.72,
+      elapsed: 0,
+      heroAction: 0,
+      enemyAction: 0,
+      effects: [],
+      hitStop: 0,
+      screenShake: 0,
+      screenFlash: 0,
+      talk: opponent.quote,
+      talkTime: 2.2,
+      nextTalkTime: 3.5,
+      victory: false,
+      rewardPeaches: 0,
+      rewardCoins: 0
+    };
+    this.state = GAME_STATE.BATTLE;
+    this.audio.playStageBgm(index + 2, false);
+  }
+
+  finishBattle(victory) {
+    this.battle.victory = victory;
+    if (this.battle.isPvp) {
+      this.profile.recordPvpResult(victory);
+      this.battle.rankDelta = victory ? 24 : -12;
+      this.battle.message = victory ? "演武获胜，仙榜积分提升" : "演武落败，调整装备后再战";
+      this.saveProfile();
+      this.state = GAME_STATE.BATTLE_RESULT;
+      return;
+    }
+    if (victory) {
+      this.battle.rewardPeaches = 3 + Math.floor(this.battle.stage / 3);
+      this.battle.rewardCoins = 5 + this.battle.stage * 2 + (this.battle.enemy.isBoss ? 12 : 0);
+      this.profile.peaches += this.battle.rewardPeaches;
+      this.profile.coins += this.battle.rewardCoins;
+      this.profile.cultivation += 12 + this.profile.stage * 3;
+      this.profile.stage += 1;
+      this.profile.restoreExploreEnergy(1);
+      this.battle.nextSceneName = getSceneForStage(this.profile.stage).name;
+      this.saveProfile();
+      this.audio.playSfx("victory");
+    }
+    this.state = GAME_STATE.BATTLE_RESULT;
+  }
+
+  quickDraw(count) {
+    if (this.profile.peaches < count) {
+      this.showToast(`仙桃不足，${count} 次抽取需要 ${count} 个仙桃`);
+      this.state = GAME_STATE.HOME;
+      return;
+    }
+    const results = [];
+    for (let index = 0; index < count; index += 1) {
+      this.profile.chopTree();
+      const item = createEquipment(this.profile.treeLevel);
+      this.profile.discover(item);
+      results.push(item);
+    }
+    this.quickDrawResults = results.sort((left, right) => right.power - left.power);
+    this.quickDrawSynthesis = getSynthesisCandidate(this.quickDrawResults);
+    this.treePulse = 1;
+    this.audio.playSfx("chop");
+    this.saveProfile();
+  }
+
+  synthesizeQuickDraw() {
+    const synthesis = this.getQuickDrawSynthesisPreview();
+    if (!synthesis) {
+      this.showToast("至少需要 3 件同部位装备才能合成");
+      return;
+    }
+    const product = synthesizeEquipment(synthesis.materials);
+    if (!product) {
+      this.showToast("合成失败，请再试一次");
+      return;
+    }
+    const materialIds = new Set(synthesis.materials.map((item) => item.id));
+    this.quickDrawResults = this.quickDrawResults
+      .filter((item) => !materialIds.has(item.id))
+      .concat(product)
+      .sort((left, right) => right.power - left.power);
+    const comparison = this.profile.getEquipmentComparison(product);
+    const sign = comparison.powerDelta >= 0 ? "+" : "";
+    this.showToast(`合成成功：${product.name}，妖力 ${sign}${comparison.powerDelta}`);
+    this.audio.playSfx("equip");
+    this.saveProfile();
+  }
+
+  selectCosmetic(index) {
+    const item = this.profile.getCosmetics()[index];
+    if (!item) return;
+    const result = this.profile.buyOrEquipCosmetic(item.id);
+    if (!result.ok) {
+      this.shopMessage = `灵石不足，需要 ${item.price}`;
+      return;
+    }
+    this.shopMessage = item.owned ? `已换上：${item.name}` : `已购买并换上：${item.name}`;
+    this.audio.playSfx("equip");
+    this.saveProfile();
+  }
+
+  handleTouchStart(event) {
+    const touches = event.changedTouches || event.touches || [];
+    const touch = touches[0];
+    if (!touch) return;
+    const x = touch.clientX;
+    const y = touch.clientY;
+    if (!this.profile.tutorialCompleted) {
+      if (this.ui.isTutorialSkipButton(x, y)) this.completeTutorial();
+      else if (this.ui.isTutorialNextButton(x, y)) this.advanceTutorial();
+      return;
+    }
+    if (this.dialogue) {
+      if (this.ui.isDialogueNextButton(x, y)) this.advanceHeroDialogue();
+      else if (this.ui.isDialogueCloseButton(x, y)) this.closeHeroDialogue();
+      return;
+    }
+    if (this.inspectedItem) {
+      this.handleInspectedItemAction(this.ui.getInspectActionAt(x, y, this.inspectedItemSource));
+      return;
+    }
+    if (this.state === GAME_STATE.HOME && !this.audio.bgmName) {
+      this.audio.playBgm("home");
+    }
+
+    if (this.state === GAME_STATE.HOME) {
+      const equipmentSlot = this.ui.getEquipmentSlotAt(x, y, this.profile);
+      if (equipmentSlot) this.openEnhance(equipmentSlot);
+      else if (this.ui.isHero(x, y)) this.openHeroDialogue();
+      else if (this.ui.isChopButton(x, y) || this.ui.isTree(x, y)) this.chopTree();
+      else if (this.ui.isChallengeButton(x, y)) this.startBattle();
+      else if (this.ui.isCultivateButton(x, y)) this.cultivate();
+      else if (this.ui.isExploreButton(x, y)) this.explore();
+      else if (this.ui.isInventoryButton(x, y)) this.openInventory();
+      else if (this.ui.isCollectionButton(x, y)) this.openCollection();
+      else if (this.ui.isSkillsButton(x, y)) this.openSkills();
+      else if (this.ui.isShopButton(x, y)) this.openShop();
+      else if (this.ui.isAudioButton(x, y)) this.audio.toggle();
+      else if (this.ui.isSignInButton(x, y)) this.openSignIn();
+      else if (this.ui.isQuickDrawButton(x, y)) this.openQuickDraw();
+      else if (this.ui.isPvpButton(x, y)) this.openPvp();
+      else if (this.ui.isRankingButton(x, y)) this.openRanking();
+    } else if (this.state === GAME_STATE.LOOT) {
+      const action = this.ui.getLootActionAt(x, y);
+      if (action === "sell") this.sellLoot();
+      else if (action === "stash") this.stashLoot();
+      else if (action === "equip") this.equipLoot();
+    } else if (this.state === GAME_STATE.COLLECTION) {
+      if (this.ui.isCollectionPreviousButton(x, y)) this.changeCollectionPage(-1);
+      else if (this.ui.isCollectionNextButton(x, y)) this.changeCollectionPage(1);
+      else if (this.ui.isCollectionCloseButton(x, y)) this.closeCollection();
+    } else if (this.state === GAME_STATE.SKILLS) {
+      const skillIndex = this.ui.getSkillIndexAt(x, y);
+      if (skillIndex >= 0) this.selectSkill(skillIndex);
+      else if (this.ui.isSkillsCloseButton(x, y)) this.closeSkills();
+    } else if (this.state === GAME_STATE.SHOP) {
+      const cosmeticIndex = this.ui.getCosmeticIndexAt(x, y);
+      if (cosmeticIndex >= 0) this.selectCosmetic(cosmeticIndex);
+      else if (this.ui.isShopCloseButton(x, y)) this.closeShop();
+    } else if (this.state === GAME_STATE.QUICK_DRAW) {
+      const count = this.ui.getQuickDrawCountAt(x, y);
+      const cardIndex = this.ui.getQuickDrawItemIndexAt(x, y, this.quickDrawResults.length);
+      if (count) this.quickDraw(count);
+      else if (cardIndex >= 0) this.openQuickDrawItem(cardIndex);
+      else if (this.ui.isQuickDrawSellButton(x, y)) this.sellQuickDraw();
+      else if (this.ui.isQuickDrawEquipButton(x, y)) this.equipBestQuickDraw();
+      else if (this.ui.isQuickDrawSynthesizeButton(x, y)) this.synthesizeQuickDraw();
+      else if (this.ui.isQuickDrawCloseButton(x, y)) this.closeQuickDraw();
+    } else if (this.state === GAME_STATE.INVENTORY) {
+      const itemIndex = this.ui.getInventoryItemIndexAt(x, y, this.profile, this.inventoryPage);
+      if (itemIndex >= 0) this.openInventoryItem(itemIndex);
+      else if (this.ui.isInventoryPrevButton(x, y)) this.changeInventoryPage(-1);
+      else if (this.ui.isInventoryNextButton(x, y)) this.changeInventoryPage(1);
+      else if (this.ui.isInventoryCloseButton(x, y)) this.closeInventory();
+    } else if (this.state === GAME_STATE.SIGN_IN) {
+      if (this.ui.isSignInClaimButton(x, y)) this.claimDailySignIn();
+      else if (this.ui.isSignInCloseButton(x, y)) this.closeSignIn();
+    } else if (this.state === GAME_STATE.RANKING) {
+      if (this.ui.isSimpleModalCloseButton(x, y, 390)) this.state = GAME_STATE.HOME;
+    } else if (this.state === GAME_STATE.PVP) {
+      const opponentIndex = this.ui.getPvpOpponentIndexAt(x, y);
+      if (opponentIndex >= 0 && opponentIndex < this.pvpOpponents.length) this.startPvpBattle(opponentIndex);
+      else if (opponentIndex >= 0) this.pvpStatus = "姝ｅ湪鍖归厤瀹炴椂鐜╁锛岃绋嶅€?";
       else if (this.ui.isSimpleModalCloseButton(x, y, 410)) this.state = GAME_STATE.HOME;
     } else if (this.state === GAME_STATE.ENHANCE) {
       if (this.ui.isEnhanceActionButton(x, y)) this.enhanceSelectedEquipment();

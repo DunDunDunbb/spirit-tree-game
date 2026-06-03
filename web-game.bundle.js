@@ -36,6 +36,7 @@ try {
 "js/core/Game.js": function(require, module, exports) {
 const MAIN_CHARACTER = require("../config/characters");
 const { createEquipment, getSynthesisCandidate, synthesizeEquipment } = require("../config/equipment");
+const { getSignInReward, SIGN_IN_REWARDS } = require("../config/signin");
 const { getSceneForStage } = require("../config/scenes");
 const { getBossForStage } = require("../config/bosses");
 const { getBattleMultiplier, getEnemyAttackMultiplier } = require("../config/difficulty");
@@ -53,6 +54,8 @@ const GAME_STATE = {
   BATTLE_RESULT: "battle-result",
   SHOP: "shop",
   QUICK_DRAW: "quick-draw",
+  INVENTORY: "inventory",
+  SIGN_IN: "sign-in",
   RANKING: "ranking",
   PVP: "pvp",
   ENHANCE: "enhance"
@@ -61,7 +64,12 @@ const GAME_STATE = {
 const STORAGE_KEY = "spirit-tree-profile-v1";
 const ENEMIES = [
   { type: "imp", name: "赤角小妖", hp: 84, atk: 12, spd: 42 },
+  { type: "bamboo-scout", name: "竹林狸妖", hp: 92, atk: 13, spd: 47 },
+  { type: "stone-beast", name: "岩甲兽", hp: 136, atk: 15, spd: 29 },
+  { type: "vine-spirit", name: "毒藤精", hp: 108, atk: 15, spd: 35 },
   { type: "brute", name: "山林妖将", hp: 122, atk: 16, spd: 31 },
+  { type: "frostwing", name: "霜羽妖", hp: 98, atk: 18, spd: 49 },
+  { type: "moon-assassin", name: "月影刺客", hp: 86, atk: 21, spd: 58 },
   { type: "wisp", name: "幽火灵使", hp: 98, atk: 14, spd: 38 }
 ];
 
@@ -98,6 +106,9 @@ class Game {
     this.shopMessage = "";
     this.quickDrawResults = [];
     this.quickDrawSynthesis = null;
+    this.inventoryPage = 0;
+    this.inspectedItem = null;
+    this.inspectedItemSource = "";
     this.enhanceSlot = "";
     this.pvpOpponents = this.createPvpOpponents();
     this.pvpStatus = "本地演示匹配";
@@ -208,6 +219,10 @@ class Game {
       this.ui.renderShop(this.profile, this.shopMessage);
     } else if (this.state === GAME_STATE.QUICK_DRAW) {
       this.ui.renderQuickDraw(this.profile, this.quickDrawResults, this.visualTime);
+    } else if (this.state === GAME_STATE.INVENTORY) {
+      this.ui.renderInventory(this.profile, this.inventoryPage);
+    } else if (this.state === GAME_STATE.SIGN_IN) {
+      this.ui.renderSignIn(this.profile, SIGN_IN_REWARDS, this.getTodayKey());
     } else if (this.state === GAME_STATE.RANKING) {
       this.ui.renderRanking(this.profile, this.rankingEntries, this.rankingStatus);
     } else if (this.state === GAME_STATE.PVP) {
@@ -219,6 +234,9 @@ class Game {
       this.ui.renderTutorial(this.tutorialStep);
     } else if (this.dialogue) {
       this.ui.renderHeroDialogue(this.profile, this.dialogue.lines[this.dialogue.index]);
+    }
+    if (this.inspectedItem) {
+      this.ui.renderItemInspect(this.profile, this.inspectedItem, this.inspectedItemSource);
     }
   }
 
@@ -237,7 +255,7 @@ class Game {
   equipLoot() {
     if (!this.currentLoot) return;
     const oldItem = this.profile.getEquipped(this.currentLoot.slot);
-    if (oldItem) this.profile.coins += oldItem.price;
+    if (oldItem) this.profile.addToInventory(oldItem);
     this.profile.equip(this.currentLoot);
     this.currentLoot = null;
     this.state = GAME_STATE.HOME;
@@ -255,15 +273,26 @@ class Game {
     this.saveProfile();
   }
 
+  stashLoot() {
+    if (!this.currentLoot) return;
+    this.profile.addToInventory(this.currentLoot);
+    this.currentLoot = null;
+    this.state = GAME_STATE.HOME;
+    this.showToast("装备已放入背包");
+    this.saveProfile();
+  }
+
   openQuickDraw() {
     this.quickDrawResults = [];
     this.quickDrawSynthesis = null;
+    this.inspectedItem = null;
+    this.inspectedItemSource = "";
     this.state = GAME_STATE.QUICK_DRAW;
   }
 
   closeQuickDraw() {
     if (this.quickDrawResults.length) {
-      this.sellQuickDraw();
+      this.resolveQuickDraw();
       return;
     }
     this.state = GAME_STATE.HOME;
@@ -295,6 +324,8 @@ class Game {
     const coins = this.quickDrawResults.reduce((total, item) => total + item.price, 0);
     this.profile.coins += coins;
     this.quickDrawResults = [];
+    this.inspectedItem = null;
+    this.inspectedItemSource = "";
     this.state = GAME_STATE.HOME;
     this.showToast(`批量分解完成，灵石 +${coins}`);
     this.saveProfile();
@@ -959,6 +990,926 @@ class Game {
       }
     }
   }
+
+  getTodayKey() {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = `${now.getMonth() + 1}`.padStart(2, "0");
+    const day = `${now.getDate()}`.padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  }
+
+  openInventory() {
+    this.inventoryPage = 0;
+    this.state = GAME_STATE.INVENTORY;
+  }
+
+  changeInventoryPage(offset) {
+    const totalPages = Math.max(1, Math.ceil(this.profile.getInventory().length / 6));
+    this.inventoryPage = (this.inventoryPage + offset + totalPages) % totalPages;
+  }
+
+  closeInventory() {
+    this.state = GAME_STATE.HOME;
+  }
+
+  openSignIn() {
+    this.state = GAME_STATE.SIGN_IN;
+  }
+
+  closeSignIn() {
+    this.state = GAME_STATE.HOME;
+  }
+
+  canClaimSignIn() {
+    return this.profile.signInClaimedDays < SIGN_IN_REWARDS.length && this.profile.signInLastDate !== this.getTodayKey();
+  }
+
+  applySignInReward(reward) {
+    if (!reward) return "无奖励";
+    if (reward.type === "peaches") {
+      this.profile.peaches += reward.amount || 0;
+      return `${reward.label}`;
+    }
+    if (reward.type === "coins") {
+      this.profile.coins += reward.amount || 0;
+      return `${reward.label}`;
+    }
+    if (reward.type === "cultivation") {
+      this.profile.cultivation += reward.amount || 0;
+      return `${reward.label}`;
+    }
+    if (reward.type === "cosmetic") {
+      const item = this.profile.unlockCosmetic(reward.cosmeticId);
+      return item ? `解锁皮肤 ${item.name}` : reward.label;
+    }
+    if (reward.type === "equipment") {
+      const item = typeof reward.item === "function" ? reward.item() : null;
+      if (item) {
+        this.profile.addToInventory(item);
+        return `获得装备 ${item.name}`;
+      }
+    }
+    return reward.label || "奖励已发放";
+  }
+
+  claimDailySignIn() {
+    if (this.profile.signInClaimedDays >= SIGN_IN_REWARDS.length) {
+      this.showToast("30日签到已全部完成");
+      return;
+    }
+    if (!this.canClaimSignIn()) {
+      this.showToast("今日已签到，请明天再来");
+      return;
+    }
+    const reward = getSignInReward(this.profile.signInClaimedDays);
+    const resultText = this.applySignInReward(reward);
+    this.profile.signInClaimedDays += 1;
+    this.profile.signInLastDate = this.getTodayKey();
+    this.showToast(`签到成功：${resultText}`);
+    this.audio.playSfx("equip");
+    this.saveProfile();
+  }
+
+  inspectItem(item, source) {
+    if (!item) return;
+    this.inspectedItem = item;
+    this.inspectedItemSource = source;
+  }
+
+  closeInspectedItem() {
+    this.inspectedItem = null;
+    this.inspectedItemSource = "";
+  }
+
+  equipLoot() {
+    if (!this.currentLoot) return;
+    const oldItem = this.profile.getEquipped(this.currentLoot.slot);
+    if (oldItem) this.profile.addToInventory(oldItem);
+    this.profile.equip(this.currentLoot);
+    this.currentLoot = null;
+    this.state = GAME_STATE.HOME;
+    this.showToast(oldItem ? "新装备已穿戴，旧装备已放入背包" : "装备已穿戴");
+    this.audio.playSfx("equip");
+    this.saveProfile();
+  }
+
+  sellLoot() {
+    if (!this.currentLoot) return;
+    this.profile.coins += this.currentLoot.price;
+    this.currentLoot = null;
+    this.state = GAME_STATE.HOME;
+    this.showToast("装备已分解为灵石");
+    this.saveProfile();
+  }
+
+  stashLoot() {
+    if (!this.currentLoot) return;
+    this.profile.addToInventory(this.currentLoot);
+    this.currentLoot = null;
+    this.state = GAME_STATE.HOME;
+    this.showToast("装备已放入背包");
+    this.saveProfile();
+  }
+
+  openQuickDraw() {
+    this.quickDrawResults = [];
+    this.quickDrawSynthesis = null;
+    this.closeInspectedItem();
+    this.state = GAME_STATE.QUICK_DRAW;
+  }
+
+  closeQuickDraw() {
+    if (this.quickDrawResults.length) {
+      this.resolveQuickDraw();
+      return;
+    }
+    this.closeInspectedItem();
+    this.state = GAME_STATE.HOME;
+    this.quickDrawSynthesis = null;
+  }
+
+  sellQuickDraw() {
+    if (!this.quickDrawResults.length) return;
+    const coins = this.quickDrawResults.reduce((total, item) => total + item.price, 0);
+    this.profile.coins += coins;
+    this.quickDrawResults = [];
+    this.closeInspectedItem();
+    this.state = GAME_STATE.HOME;
+    this.showToast(`批量分解完成，灵石 +${coins}`);
+    this.saveProfile();
+  }
+
+  resolveQuickDraw() {
+    if (!this.quickDrawResults.length) return;
+    const storedItems = this.quickDrawResults.filter((item) => item.rarity === "legend");
+    const soldItems = this.quickDrawResults.filter((item) => item.rarity !== "legend");
+    storedItems.forEach((item) => this.profile.addToInventory(item));
+    const coins = soldItems.reduce((total, item) => total + item.price, 0);
+    this.profile.coins += coins;
+    this.quickDrawResults = [];
+    this.closeInspectedItem();
+    this.state = GAME_STATE.HOME;
+    this.showToast(`已收纳 ${storedItems.length} 件金装，其余分解获得 ${coins} 灵石`);
+    this.saveProfile();
+  }
+
+  equipBestQuickDraw() {
+    if (!this.quickDrawResults.length) return;
+    const bestBySlot = new Map();
+    this.quickDrawResults.forEach((item) => {
+      const comparison = this.profile.getEquipmentComparison(item);
+      if (comparison.powerDelta <= 0) return;
+      const current = bestBySlot.get(item.slot);
+      if (!current || item.power > current.item.power) {
+        bestBySlot.set(item.slot, { item, comparison });
+      }
+    });
+    const equippedIds = new Set();
+    let equippedCount = 0;
+    bestBySlot.forEach(({ item }) => {
+      const oldItem = this.profile.getEquipped(item.slot);
+      if (oldItem) this.profile.addToInventory(oldItem);
+      this.profile.equip(item);
+      equippedIds.add(item.id);
+      equippedCount += 1;
+    });
+    const remaining = this.quickDrawResults.filter((item) => !equippedIds.has(item.id));
+    const storedItems = remaining.filter((item) => item.rarity === "legend");
+    const soldItems = remaining.filter((item) => item.rarity !== "legend");
+    storedItems.forEach((item) => this.profile.addToInventory(item));
+    const coins = soldItems.reduce((total, item) => total + item.price, 0);
+    this.profile.coins += coins;
+    this.quickDrawResults = [];
+    this.closeInspectedItem();
+    this.state = GAME_STATE.HOME;
+    this.showToast(`已装备 ${equippedCount} 件最强装备，保存 ${storedItems.length} 件金装，获得 ${coins} 灵石`);
+    this.audio.playSfx("equip");
+    this.saveProfile();
+  }
+
+  openQuickDrawItem(index) {
+    const item = this.quickDrawResults[index];
+    if (item) this.inspectItem(item, "quick-draw");
+  }
+
+  storeInspectedQuickDrawItem() {
+    if (!this.inspectedItem) return;
+    this.quickDrawResults = this.quickDrawResults.filter((item) => item.id !== this.inspectedItem.id);
+    this.profile.addToInventory(this.inspectedItem);
+    this.showToast("装备已移入背包");
+    this.closeInspectedItem();
+    this.saveProfile();
+  }
+
+  sellInspectedQuickDrawItem() {
+    if (!this.inspectedItem) return;
+    this.quickDrawResults = this.quickDrawResults.filter((item) => item.id !== this.inspectedItem.id);
+    this.profile.coins += this.inspectedItem.price || 0;
+    this.showToast(`已分解 ${this.inspectedItem.name}`);
+    this.closeInspectedItem();
+    this.saveProfile();
+  }
+
+  equipInspectedQuickDrawItem() {
+    if (!this.inspectedItem) return;
+    const oldItem = this.profile.getEquipped(this.inspectedItem.slot);
+    if (oldItem) this.profile.addToInventory(oldItem);
+    this.profile.equip(this.inspectedItem);
+    this.quickDrawResults = this.quickDrawResults.filter((item) => item.id !== this.inspectedItem.id);
+    this.showToast("已穿戴选中装备");
+    this.audio.playSfx("equip");
+    this.closeInspectedItem();
+    this.saveProfile();
+  }
+
+  openInventoryItem(index) {
+    const items = this.profile.getInventory().slice(this.inventoryPage * 6, this.inventoryPage * 6 + 6);
+    const item = items[index];
+    if (item) this.inspectItem(item, "inventory");
+  }
+
+  sellInspectedInventoryItem() {
+    if (!this.inspectedItem) return;
+    this.profile.sellInventoryItem(this.inspectedItem.id);
+    this.showToast(`已出售 ${this.inspectedItem.name}`);
+    this.closeInspectedItem();
+    this.saveProfile();
+  }
+
+  equipInspectedInventoryItem() {
+    if (!this.inspectedItem) return;
+    this.profile.equipFromInventory(this.inspectedItem.id);
+    this.showToast("已从背包装备");
+    this.audio.playSfx("equip");
+    this.closeInspectedItem();
+    this.saveProfile();
+  }
+
+  handleInspectedItemAction(action) {
+    if (!action) return false;
+    if (action === "close") {
+      this.closeInspectedItem();
+      return true;
+    }
+    if (this.inspectedItemSource === "quick-draw") {
+      if (action === "equip") this.equipInspectedQuickDrawItem();
+      else if (action === "stash") this.storeInspectedQuickDrawItem();
+      else if (action === "sell") this.sellInspectedQuickDrawItem();
+      return true;
+    }
+    if (this.inspectedItemSource === "inventory") {
+      if (action === "equip") this.equipInspectedInventoryItem();
+      else if (action === "sell") this.sellInspectedInventoryItem();
+      else if (action === "stash") this.closeInspectedItem();
+      return true;
+    }
+    return false;
+  }
+
+  createPvpOpponents() {
+    return [
+      { name: "草原悍匪·阿塔", realm: "炼气九层", power: 1320, hp: 390, atk: 43, spd: 148, quote: "你的仙桃，归我了。" },
+      { name: "黑风寨·大头领", realm: "筑基初期", power: 1760, hp: 510, atk: 55, spd: 136, quote: "让我看看你能撑几招。" },
+      { name: "赤霄真人", realm: "筑基中期", power: 2180, hp: 620, atk: 64, spd: 154, quote: "草原之上，强者为尊。" },
+      { name: "月坛剑客", realm: "筑基后期", power: 2640, hp: 730, atk: 72, spd: 168, quote: "此剑，只问胜负。" }
+    ];
+  }
+
+  chopTree() {
+    if (!this.profile.chopTree()) {
+      this.showToast("仙桃不足，挑战关卡可获得仙桃");
+      return;
+    }
+    this.treePulse = 1;
+    this.pendingLoot = createEquipment(this.profile.treeLevel);
+    this.profile.discover(this.pendingLoot);
+    this.homeAction = 0.48;
+    this.audio.playSfx("chop");
+  }
+
+  explore() {
+    if (!this.profile.explore()) {
+      this.showToast("游历次数不足，挑战胜利后可恢复");
+      return;
+    }
+    this.audio.playSfx("explore");
+    const roll = Math.random();
+    if (roll < 0.38) {
+      this.currentLoot = createEquipment(this.profile.treeLevel + 1);
+      this.profile.discover(this.currentLoot);
+      this.state = GAME_STATE.LOOT;
+      this.saveProfile();
+      return;
+    }
+    if (roll < 0.68) {
+      const peaches = 2 + Math.floor(Math.random() * 4);
+      this.profile.peaches += peaches;
+      this.showToast(`游历奇遇：获得仙桃 ${peaches}`);
+    } else if (roll < 0.9) {
+      const coins = 8 + this.profile.stage * 2;
+      this.profile.coins += coins;
+      this.showToast(`发现灵脉：获得灵石 ${coins}`);
+    } else {
+      const cultivation = 18 + this.profile.treeLevel * 3;
+      this.profile.cultivation += cultivation;
+      this.showToast(`高人指点：修为增加 ${cultivation}`);
+    }
+    this.saveProfile();
+  }
+
+  selectSkill(index) {
+    const skill = this.profile.getSkills()[index];
+    if (!skill || !this.profile.setSkill(skill.id)) return;
+    this.showToast(`已装备技能：${skill.name}`);
+    this.saveProfile();
+  }
+
+  openShop() {
+    this.shopMessage = "点击皮肤可直接用灵石购买或换上";
+    this.state = GAME_STATE.SHOP;
+  }
+
+  openRanking() {
+    this.state = GAME_STATE.RANKING;
+    this.rankingEntries = [];
+    this.rankingStatus = "正在读取实时仙榜...";
+    if (typeof wx.fetchLeaderboard !== "function") {
+      this.rankingStatus = "当前运行环境未连接排行榜服务";
+      return;
+    }
+    wx.fetchLeaderboard()
+      .then((entries) => {
+        this.rankingEntries = entries;
+        this.rankingStatus = typeof location !== "undefined" && location.protocol === "file:"
+          ? "离线预览榜单 · 联网后显示实时玩家"
+          : entries.length ? "实时玩家榜单" : "暂无玩家记录";
+      })
+      .catch((error) => {
+        this.rankingStatus = `仙榜读取失败：${error.message}`;
+      });
+  }
+
+  openPvp() {
+    this.state = GAME_STATE.PVP;
+    this.pvpOpponents = [];
+    this.pvpStatus = "正在读取实时玩家...";
+    if (typeof wx.fetchPvpOpponents !== "function") {
+      this.pvpOpponents = this.createPvpOpponents();
+      this.pvpStatus = "本地演示匹配";
+      return;
+    }
+    wx.fetchPvpOpponents()
+      .then((opponents) => {
+        if (opponents.length) {
+          this.pvpOpponents = opponents;
+          this.pvpStatus = "实时玩家匹配";
+        } else {
+          this.pvpOpponents = this.createPvpOpponents();
+          this.pvpStatus = "暂无其他玩家，已切换本地演示";
+        }
+      })
+      .catch((error) => {
+        this.pvpOpponents = this.createPvpOpponents();
+        this.pvpStatus = `实时玩家读取失败：${error.message}`;
+      });
+  }
+
+  enhanceSelectedEquipment() {
+    const result = this.profile.enhanceEquipment(this.enhanceSlot);
+    if (!result.ok) {
+      this.showToast(result.reason === "coins"
+        ? `灵石不足，需要 ${result.cost}`
+        : result.reason === "failed"
+          ? `强化失败，消耗 ${result.paid} 灵石`
+          : result.reason === "max"
+            ? "装备已强化至最高等级"
+            : "该部位尚未装备");
+      if (result.reason === "failed") {
+        this.audio.playSfx("dodge");
+        this.saveProfile();
+      }
+      return;
+    }
+    this.showToast(`${result.item.name} 强化至 +${result.item.enhanceLevel}，消耗 ${result.paid} 灵石`);
+    this.audio.playSfx("equip");
+    this.saveProfile();
+  }
+
+  completeTutorial() {
+    this.profile.tutorialCompleted = true;
+    this.saveProfile();
+    this.showToast("新手引导完成，开始修行吧");
+  }
+
+  getHeroDialogueLines() {
+    const lines = [
+      "灵树的气息很安稳。再砍几次树，也许能找到更适合我们的装备。",
+      `我现在使用的是「${this.profile.character.skill.name}」。想换一种打法，就点上方的技能按钮。`,
+      `前方已经探索到第 ${this.profile.stage} 关。每逢五关都会遇到一名新的首领。`
+    ];
+    if (this.profile.peaches <= 5) {
+      lines.push("仙桃快不够了。先去游历，或者挑战关卡补充一些再继续砍树吧。");
+    } else {
+      lines.push(`我们还有 ${this.profile.peaches} 个仙桃，可以继续从灵树中寻找装备。`);
+    }
+    if (Object.keys(this.profile.equipment).length < 3) {
+      lines.push("身上的装备还不齐。先把六个部位慢慢补满，妖力会提升得更稳定。");
+    } else {
+      lines.push("装备已经逐渐成形。留意套装和会心、连击这些特殊属性，它们很重要。");
+    }
+    const skin = this.profile.getEquippedCosmetics().find((item) => item.type === "skin");
+    if (skin) lines.push(`今天穿的是「${skin.name}」。修仙也要讲究气势。`);
+    return lines;
+  }
+
+  getBattleDialogueLines() {
+    const skin = this.profile.getEquippedCosmetics().find((item) => item.type === "skin");
+    const lines = ["稳住气息，寻找破绽。", "灵树在指引我们。", "再来一招！"];
+    if (skin && skin.id === "streetwear") lines.push("墨镜一戴，谁也不爱。");
+    if (skin && skin.id === "wuxia") lines.push("云水一剑，破！");
+    if (skin && skin.id === "royal") lines.push("这就是王者的从容。");
+    if (skin && skin.id === "bunny") lines.push("月兔踏风，闪开！");
+    if (skin && skin.id === "nurse") lines.push("别担心，这点伤能治。");
+    if (skin && skin.id === "bocchi-shirt") lines.push("社恐归社恐，打架不能输。");
+    return lines;
+  }
+
+  cultivate() {
+    const cost = 12 + Math.floor(this.profile.cultivation / 45) * 4;
+    if (this.profile.coins < cost) {
+      this.showToast(`灵石不足，吐纳需要 ${cost}`);
+      return;
+    }
+    this.profile.coins -= cost;
+    this.profile.cultivation += 24 + this.profile.treeLevel * 3;
+    this.showToast("吐纳淬炼完成，修为提升");
+    this.saveProfile();
+  }
+
+  applySignInReward(reward) {
+    if (!reward) return "无奖励";
+    if (reward.type === "peaches") {
+      this.profile.peaches += reward.amount || 0;
+      return reward.label;
+    }
+    if (reward.type === "coins") {
+      this.profile.coins += reward.amount || 0;
+      return reward.label;
+    }
+    if (reward.type === "cultivation") {
+      this.profile.cultivation += reward.amount || 0;
+      return reward.label;
+    }
+    if (reward.type === "cosmetic") {
+      const item = this.profile.unlockCosmetic(reward.cosmeticId);
+      return item ? `解锁皮肤 ${item.name}` : reward.label;
+    }
+    if (reward.type === "equipment") {
+      const item = typeof reward.item === "function" ? reward.item() : null;
+      if (item) {
+        this.profile.addToInventory(item);
+        return `获得装备 ${item.name}`;
+      }
+    }
+    return reward.label || "奖励已发放";
+  }
+
+  claimDailySignIn() {
+    if (this.profile.signInClaimedDays >= SIGN_IN_REWARDS.length) {
+      this.showToast("30日签到已全部完成");
+      return;
+    }
+    if (!this.canClaimSignIn()) {
+      this.showToast("今日已签到，请明天再来");
+      return;
+    }
+    const reward = getSignInReward(this.profile.signInClaimedDays);
+    const resultText = this.applySignInReward(reward);
+    this.profile.signInClaimedDays += 1;
+    this.profile.signInLastDate = this.getTodayKey();
+    this.showToast(`签到成功：${resultText}`);
+    this.audio.playSfx("equip");
+    this.saveProfile();
+  }
+
+  equipLoot() {
+    if (!this.currentLoot) return;
+    const oldItem = this.profile.getEquipped(this.currentLoot.slot);
+    if (oldItem) this.profile.addToInventory(oldItem);
+    this.profile.equip(this.currentLoot);
+    this.currentLoot = null;
+    this.state = GAME_STATE.HOME;
+    this.showToast(oldItem ? "新装备已穿戴，旧装备已放入背包" : "装备已穿戴");
+    this.audio.playSfx("equip");
+    this.saveProfile();
+  }
+
+  sellLoot() {
+    if (!this.currentLoot) return;
+    this.profile.coins += this.currentLoot.price;
+    this.currentLoot = null;
+    this.state = GAME_STATE.HOME;
+    this.showToast("装备已分解为灵石");
+    this.saveProfile();
+  }
+
+  stashLoot() {
+    if (!this.currentLoot) return;
+    this.profile.addToInventory(this.currentLoot);
+    this.currentLoot = null;
+    this.state = GAME_STATE.HOME;
+    this.showToast("装备已放入背包");
+    this.saveProfile();
+  }
+
+  sellQuickDraw() {
+    if (!this.quickDrawResults.length) return;
+    const coins = this.quickDrawResults.reduce((total, item) => total + item.price, 0);
+    this.profile.coins += coins;
+    this.quickDrawResults = [];
+    this.closeInspectedItem();
+    this.state = GAME_STATE.HOME;
+    this.showToast(`批量分解完成，灵石 +${coins}`);
+    this.saveProfile();
+  }
+
+  resolveQuickDraw() {
+    if (!this.quickDrawResults.length) return;
+    const storedItems = this.quickDrawResults.filter((item) => item.rarity === "legend");
+    const soldItems = this.quickDrawResults.filter((item) => item.rarity !== "legend");
+    storedItems.forEach((item) => this.profile.addToInventory(item));
+    const coins = soldItems.reduce((total, item) => total + item.price, 0);
+    this.profile.coins += coins;
+    this.quickDrawResults = [];
+    this.closeInspectedItem();
+    this.state = GAME_STATE.HOME;
+    this.showToast(`已收纳 ${storedItems.length} 件金装，其余分解获得 ${coins} 灵石`);
+    this.saveProfile();
+  }
+
+  equipBestQuickDraw() {
+    if (!this.quickDrawResults.length) return;
+    const bestBySlot = new Map();
+    this.quickDrawResults.forEach((item) => {
+      const comparison = this.profile.getEquipmentComparison(item);
+      if (comparison.powerDelta <= 0) return;
+      const current = bestBySlot.get(item.slot);
+      if (!current || item.power > current.item.power) bestBySlot.set(item.slot, { item, comparison });
+    });
+    const equippedIds = new Set();
+    let equippedCount = 0;
+    bestBySlot.forEach(({ item }) => {
+      const oldItem = this.profile.getEquipped(item.slot);
+      if (oldItem) this.profile.addToInventory(oldItem);
+      this.profile.equip(item);
+      equippedIds.add(item.id);
+      equippedCount += 1;
+    });
+    const remaining = this.quickDrawResults.filter((item) => !equippedIds.has(item.id));
+    const storedItems = remaining.filter((item) => item.rarity === "legend");
+    const soldItems = remaining.filter((item) => item.rarity !== "legend");
+    storedItems.forEach((item) => this.profile.addToInventory(item));
+    const coins = soldItems.reduce((total, item) => total + item.price, 0);
+    this.profile.coins += coins;
+    this.quickDrawResults = [];
+    this.closeInspectedItem();
+    this.state = GAME_STATE.HOME;
+    this.showToast(`已装备 ${equippedCount} 件最强装备，保存 ${storedItems.length} 件金装，获得 ${coins} 灵石`);
+    this.audio.playSfx("equip");
+    this.saveProfile();
+  }
+
+  storeInspectedQuickDrawItem() {
+    if (!this.inspectedItem) return;
+    this.quickDrawResults = this.quickDrawResults.filter((item) => item.id !== this.inspectedItem.id);
+    this.profile.addToInventory(this.inspectedItem);
+    this.showToast("装备已移入背包");
+    this.closeInspectedItem();
+    this.saveProfile();
+  }
+
+  sellInspectedQuickDrawItem() {
+    if (!this.inspectedItem) return;
+    this.quickDrawResults = this.quickDrawResults.filter((item) => item.id !== this.inspectedItem.id);
+    this.profile.coins += this.inspectedItem.price || 0;
+    this.showToast(`已分解 ${this.inspectedItem.name}`);
+    this.closeInspectedItem();
+    this.saveProfile();
+  }
+
+  equipInspectedQuickDrawItem() {
+    if (!this.inspectedItem) return;
+    const oldItem = this.profile.getEquipped(this.inspectedItem.slot);
+    if (oldItem) this.profile.addToInventory(oldItem);
+    this.profile.equip(this.inspectedItem);
+    this.quickDrawResults = this.quickDrawResults.filter((item) => item.id !== this.inspectedItem.id);
+    this.showToast("已穿戴选中装备");
+    this.audio.playSfx("equip");
+    this.closeInspectedItem();
+    this.saveProfile();
+  }
+
+  sellInspectedInventoryItem() {
+    if (!this.inspectedItem) return;
+    this.profile.sellInventoryItem(this.inspectedItem.id);
+    this.showToast(`已出售 ${this.inspectedItem.name}`);
+    this.closeInspectedItem();
+    this.saveProfile();
+  }
+
+  equipInspectedInventoryItem() {
+    if (!this.inspectedItem) return;
+    this.profile.equipFromInventory(this.inspectedItem.id);
+    this.showToast("已从背包装备");
+    this.audio.playSfx("equip");
+    this.closeInspectedItem();
+    this.saveProfile();
+  }
+
+  startBattle() {
+    const stage = this.profile.stage;
+    const template = ENEMIES[(stage - 1) % ENEMIES.length];
+    const isBoss = stage % 5 === 0;
+    const boss = isBoss ? getBossForStage(stage) : null;
+    const baseTemplate = boss ? ENEMIES.find((enemy) => enemy.type === boss.type) || template : template;
+    const multiplier = Math.min(1e12, getBattleMultiplier(stage, isBoss));
+    const attackMultiplier = Math.min(1e12, getEnemyAttackMultiplier(stage, isBoss));
+    const stats = this.profile.getStats();
+    const scene = getSceneForStage(stage);
+    const enemy = {
+      ...baseTemplate,
+      ...(boss || {}),
+      name: boss ? `${boss.title} · ${boss.name}` : baseTemplate.name,
+      maxHp: Math.round(baseTemplate.hp * multiplier * (boss ? boss.hpFactor : 1)),
+      hp: Math.round(baseTemplate.hp * multiplier * (boss ? boss.hpFactor : 1)),
+      atk: Math.round(baseTemplate.atk * attackMultiplier * (boss ? boss.atkFactor : 1)),
+      isBoss
+    };
+    this.battle = {
+      stage,
+      scene,
+      enemy,
+      heroMaxHp: stats.hp,
+      heroHp: stats.hp,
+      heroDisplayedHp: stats.hp,
+      heroAttack: stats.atk,
+      heroCrit: stats.crit,
+      heroCombo: stats.combo,
+      heroDodge: stats.dodge,
+      heroLifesteal: stats.lifesteal,
+      heroCounter: stats.counter,
+      heroAttackTimer: 0.3,
+      skillTimer: 1.7,
+      skillAction: 0,
+      enemyAttackTimer: 0.85,
+      enemyDisplayedHp: enemy.hp,
+      message: "双方正在交手",
+      introTime: isBoss ? 1.25 : 0.72,
+      elapsed: 0,
+      heroAction: 0,
+      enemyAction: 0,
+      effects: [],
+      hitStop: 0,
+      screenShake: 0,
+      screenFlash: 0,
+      victory: false,
+      rewardPeaches: 0,
+      rewardCoins: 0
+    };
+    this.state = GAME_STATE.BATTLE;
+    this.audio.playStageBgm(stage, isBoss);
+  }
+
+  startPvpBattle(index) {
+    const opponent = this.pvpOpponents[index];
+    if (!opponent) return;
+    const stats = this.profile.getStats();
+    const heroFair = this.getFairPvpStats({
+      rankScore: this.profile.rankScore,
+      pvpWins: this.profile.pvpWins,
+      pvpLosses: this.profile.pvpLosses,
+      rawStats: stats
+    });
+    const enemyFair = this.getFairPvpStats(opponent);
+    const scene = getSceneForStage(index + 2);
+    this.battle = {
+      stage: this.profile.stage,
+      scene,
+      isPvp: true,
+      fairMode: true,
+      enemy: { ...opponent, ...enemyFair, type: opponent.type || (index % 2 ? "brute" : "imp"), sprite: opponent.avatarSprite || "hero-main-character", maxHp: enemyFair.hp, hp: enemyFair.hp, isBoss: false },
+      heroMaxHp: heroFair.hp,
+      heroHp: heroFair.hp,
+      heroDisplayedHp: heroFair.hp,
+      heroAttack: heroFair.atk,
+      heroCrit: heroFair.crit,
+      heroCombo: heroFair.combo,
+      heroDodge: heroFair.dodge,
+      heroLifesteal: heroFair.lifesteal,
+      heroCounter: heroFair.counter,
+      heroAttackInterval: this.getAttackInterval(heroFair.spd, 0.82),
+      enemyAttackInterval: this.getAttackInterval(enemyFair.spd, 0.98),
+      heroAttackTimer: 0.3,
+      skillTimer: 1.7,
+      skillAction: 0,
+      enemyAttackTimer: 0.85,
+      enemyDisplayedHp: enemyFair.hp,
+      message: "演武场切磋开始",
+      introTime: 0.72,
+      elapsed: 0,
+      heroAction: 0,
+      enemyAction: 0,
+      effects: [],
+      hitStop: 0,
+      screenShake: 0,
+      screenFlash: 0,
+      talk: opponent.quote,
+      talkTime: 2.2,
+      nextTalkTime: 3.5,
+      victory: false,
+      rewardPeaches: 0,
+      rewardCoins: 0
+    };
+    this.state = GAME_STATE.BATTLE;
+    this.audio.playStageBgm(index + 2, false);
+  }
+
+  finishBattle(victory) {
+    this.battle.victory = victory;
+    if (this.battle.isPvp) {
+      this.profile.recordPvpResult(victory);
+      this.battle.rankDelta = victory ? 24 : -12;
+      this.battle.message = victory ? "演武获胜，仙榜积分提升" : "演武落败，调整装备后再战";
+      this.saveProfile();
+      this.state = GAME_STATE.BATTLE_RESULT;
+      return;
+    }
+    if (victory) {
+      this.battle.rewardPeaches = 3 + Math.floor(this.battle.stage / 3);
+      this.battle.rewardCoins = 5 + this.battle.stage * 2 + (this.battle.enemy.isBoss ? 12 : 0);
+      this.profile.peaches += this.battle.rewardPeaches;
+      this.profile.coins += this.battle.rewardCoins;
+      this.profile.cultivation += 12 + this.profile.stage * 3;
+      this.profile.stage += 1;
+      this.profile.restoreExploreEnergy(1);
+      this.battle.nextSceneName = getSceneForStage(this.profile.stage).name;
+      this.saveProfile();
+      this.audio.playSfx("victory");
+    }
+    this.state = GAME_STATE.BATTLE_RESULT;
+  }
+
+  quickDraw(count) {
+    if (this.profile.peaches < count) {
+      this.showToast(`仙桃不足，${count} 次抽取需要 ${count} 个仙桃`);
+      this.state = GAME_STATE.HOME;
+      return;
+    }
+    const results = [];
+    for (let index = 0; index < count; index += 1) {
+      this.profile.chopTree();
+      const item = createEquipment(this.profile.treeLevel);
+      this.profile.discover(item);
+      results.push(item);
+    }
+    this.quickDrawResults = results.sort((left, right) => right.power - left.power);
+    this.quickDrawSynthesis = getSynthesisCandidate(this.quickDrawResults);
+    this.treePulse = 1;
+    this.audio.playSfx("chop");
+    this.saveProfile();
+  }
+
+  synthesizeQuickDraw() {
+    const synthesis = this.getQuickDrawSynthesisPreview();
+    if (!synthesis) {
+      this.showToast("至少需要 3 件同部位装备才能合成");
+      return;
+    }
+    const product = synthesizeEquipment(synthesis.materials);
+    if (!product) {
+      this.showToast("合成失败，请再试一次");
+      return;
+    }
+    const materialIds = new Set(synthesis.materials.map((item) => item.id));
+    this.quickDrawResults = this.quickDrawResults
+      .filter((item) => !materialIds.has(item.id))
+      .concat(product)
+      .sort((left, right) => right.power - left.power);
+    const comparison = this.profile.getEquipmentComparison(product);
+    const sign = comparison.powerDelta >= 0 ? "+" : "";
+    this.showToast(`合成成功：${product.name}，妖力 ${sign}${comparison.powerDelta}`);
+    this.audio.playSfx("equip");
+    this.saveProfile();
+  }
+
+  selectCosmetic(index) {
+    const item = this.profile.getCosmetics()[index];
+    if (!item) return;
+    const result = this.profile.buyOrEquipCosmetic(item.id);
+    if (!result.ok) {
+      this.shopMessage = `灵石不足，需要 ${item.price}`;
+      return;
+    }
+    this.shopMessage = item.owned ? `已换上：${item.name}` : `已购买并换上：${item.name}`;
+    this.audio.playSfx("equip");
+    this.saveProfile();
+  }
+
+  handleTouchStart(event) {
+    const touches = event.changedTouches || event.touches || [];
+    const touch = touches[0];
+    if (!touch) return;
+    const x = touch.clientX;
+    const y = touch.clientY;
+    if (!this.profile.tutorialCompleted) {
+      if (this.ui.isTutorialSkipButton(x, y)) this.completeTutorial();
+      else if (this.ui.isTutorialNextButton(x, y)) this.advanceTutorial();
+      return;
+    }
+    if (this.dialogue) {
+      if (this.ui.isDialogueNextButton(x, y)) this.advanceHeroDialogue();
+      else if (this.ui.isDialogueCloseButton(x, y)) this.closeHeroDialogue();
+      return;
+    }
+    if (this.inspectedItem) {
+      this.handleInspectedItemAction(this.ui.getInspectActionAt(x, y, this.inspectedItemSource));
+      return;
+    }
+    if (this.state === GAME_STATE.HOME && !this.audio.bgmName) {
+      this.audio.playBgm("home");
+    }
+
+    if (this.state === GAME_STATE.HOME) {
+      const equipmentSlot = this.ui.getEquipmentSlotAt(x, y, this.profile);
+      if (equipmentSlot) this.openEnhance(equipmentSlot);
+      else if (this.ui.isHero(x, y)) this.openHeroDialogue();
+      else if (this.ui.isChopButton(x, y) || this.ui.isTree(x, y)) this.chopTree();
+      else if (this.ui.isChallengeButton(x, y)) this.startBattle();
+      else if (this.ui.isCultivateButton(x, y)) this.cultivate();
+      else if (this.ui.isExploreButton(x, y)) this.explore();
+      else if (this.ui.isInventoryButton(x, y)) this.openInventory();
+      else if (this.ui.isCollectionButton(x, y)) this.openCollection();
+      else if (this.ui.isSkillsButton(x, y)) this.openSkills();
+      else if (this.ui.isShopButton(x, y)) this.openShop();
+      else if (this.ui.isAudioButton(x, y)) this.audio.toggle();
+      else if (this.ui.isSignInButton(x, y)) this.openSignIn();
+      else if (this.ui.isQuickDrawButton(x, y)) this.openQuickDraw();
+      else if (this.ui.isPvpButton(x, y)) this.openPvp();
+      else if (this.ui.isRankingButton(x, y)) this.openRanking();
+    } else if (this.state === GAME_STATE.LOOT) {
+      const action = this.ui.getLootActionAt(x, y);
+      if (action === "sell") this.sellLoot();
+      else if (action === "stash") this.stashLoot();
+      else if (action === "equip") this.equipLoot();
+    } else if (this.state === GAME_STATE.COLLECTION) {
+      if (this.ui.isCollectionPreviousButton(x, y)) this.changeCollectionPage(-1);
+      else if (this.ui.isCollectionNextButton(x, y)) this.changeCollectionPage(1);
+      else if (this.ui.isCollectionCloseButton(x, y)) this.closeCollection();
+    } else if (this.state === GAME_STATE.SKILLS) {
+      const skillIndex = this.ui.getSkillIndexAt(x, y);
+      if (skillIndex >= 0) this.selectSkill(skillIndex);
+      else if (this.ui.isSkillsCloseButton(x, y)) this.closeSkills();
+    } else if (this.state === GAME_STATE.SHOP) {
+      const cosmeticIndex = this.ui.getCosmeticIndexAt(x, y);
+      if (cosmeticIndex >= 0) this.selectCosmetic(cosmeticIndex);
+      else if (this.ui.isShopCloseButton(x, y)) this.closeShop();
+    } else if (this.state === GAME_STATE.QUICK_DRAW) {
+      const count = this.ui.getQuickDrawCountAt(x, y);
+      const cardIndex = this.ui.getQuickDrawItemIndexAt(x, y, this.quickDrawResults.length);
+      if (count) this.quickDraw(count);
+      else if (cardIndex >= 0) this.openQuickDrawItem(cardIndex);
+      else if (this.ui.isQuickDrawSellButton(x, y)) this.sellQuickDraw();
+      else if (this.ui.isQuickDrawEquipButton(x, y)) this.equipBestQuickDraw();
+      else if (this.ui.isQuickDrawSynthesizeButton(x, y)) this.synthesizeQuickDraw();
+      else if (this.ui.isQuickDrawCloseButton(x, y)) this.closeQuickDraw();
+    } else if (this.state === GAME_STATE.INVENTORY) {
+      const itemIndex = this.ui.getInventoryItemIndexAt(x, y, this.profile, this.inventoryPage);
+      if (itemIndex >= 0) this.openInventoryItem(itemIndex);
+      else if (this.ui.isInventoryPrevButton(x, y)) this.changeInventoryPage(-1);
+      else if (this.ui.isInventoryNextButton(x, y)) this.changeInventoryPage(1);
+      else if (this.ui.isInventoryCloseButton(x, y)) this.closeInventory();
+    } else if (this.state === GAME_STATE.SIGN_IN) {
+      if (this.ui.isSignInClaimButton(x, y)) this.claimDailySignIn();
+      else if (this.ui.isSignInCloseButton(x, y)) this.closeSignIn();
+    } else if (this.state === GAME_STATE.RANKING) {
+      if (this.ui.isSimpleModalCloseButton(x, y, 390)) this.state = GAME_STATE.HOME;
+    } else if (this.state === GAME_STATE.PVP) {
+      const opponentIndex = this.ui.getPvpOpponentIndexAt(x, y);
+      if (opponentIndex >= 0 && opponentIndex < this.pvpOpponents.length) this.startPvpBattle(opponentIndex);
+      else if (opponentIndex >= 0) this.pvpStatus = "姝ｅ湪鍖归厤瀹炴椂鐜╁锛岃绋嶅€?";
+      else if (this.ui.isSimpleModalCloseButton(x, y, 410)) this.state = GAME_STATE.HOME;
+    } else if (this.state === GAME_STATE.ENHANCE) {
+      if (this.ui.isEnhanceActionButton(x, y)) this.enhanceSelectedEquipment();
+      else if (this.ui.isSimpleModalCloseButton(x, y, 340)) this.state = GAME_STATE.HOME;
+    } else if (this.state === GAME_STATE.BATTLE_RESULT) {
+      if (this.ui.isContinueButton(x, y) && this.battle.victory && !this.battle.isPvp) this.startBattle();
+      else if (this.ui.isResultButton(x, y)) {
+        this.state = GAME_STATE.HOME;
+        this.audio.playBgm("home");
+      }
+    }
+  }
 }
 
 module.exports = Game;
@@ -967,12 +1918,9 @@ module.exports = Game;
 "js/config/characters.js": function(require, module, exports) {
 const { getSkillById } = require("./skills");
 
-/**
- * 唯一主角的数值、立绘和默认技能配置。
- */
 const MAIN_CHARACTER = {
   id: "main-character",
-  name: "红色主角",
+  name: "红衣主角",
   hp: 120,
   atk: 18,
   spd: 175,
@@ -986,114 +1934,18 @@ module.exports = MAIN_CHARACTER;
 },
 "js/config/skills.js": function(require, module, exports) {
 const SKILLS = [
-  {
-    id: "wave",
-    name: "裂空冲击",
-    type: "wave",
-    color: "#f0647f",
-    cooldown: 4,
-    multiplier: 1.72,
-    description: "剑气震荡，攻守均衡"
-  },
-  {
-    id: "flame",
-    name: "焚星火雨",
-    type: "flame",
-    color: "#ff9b54",
-    cooldown: 4.8,
-    multiplier: 2.08,
-    description: "火雨坠落，高额爆发"
-  },
-  {
-    id: "thunder",
-    name: "九霄雷引",
-    type: "thunder",
-    color: "#b997ff",
-    cooldown: 3.2,
-    multiplier: 1.45,
-    description: "雷光连闪，释放最快"
-  },
-  {
-    id: "frost",
-    name: "霜华绽放",
-    type: "frost",
-    color: "#8fdcff",
-    cooldown: 5.4,
-    multiplier: 2.42,
-    description: "寒气爆裂，单次最痛"
-  },
-  {
-    id: "orbit",
-    name: "星河剑阵",
-    type: "orbit",
-    color: "#83e8c5",
-    cooldown: 3.8,
-    multiplier: 1.64,
-    description: "灵剑环绕，稳定压制"
-  },
-  {
-    id: "poison",
-    name: "蚀骨毒雾",
-    type: "poison",
-    color: "#9be36d",
-    cooldown: 4.4,
-    multiplier: 1.9,
-    description: "毒雾侵蚀，适合拉扯"
-  },
-  {
-    id: "bomb",
-    name: "灵爆符阵",
-    type: "bomb",
-    color: "#ffd166",
-    cooldown: 5.1,
-    multiplier: 2.32,
-    description: "符阵爆开，重击爆发"
-  },
-  {
-    id: "dash",
-    name: "追风瞬斩",
-    type: "wave",
-    color: "#7ee7ff",
-    cooldown: 2.7,
-    multiplier: 1.28,
-    description: "短冷却连斩，节奏很快"
-  },
-  {
-    id: "nova",
-    name: "玄光星爆",
-    type: "orbit",
-    color: "#f2a7ff",
-    cooldown: 6.2,
-    multiplier: 2.85,
-    description: "长蓄力大招，爆发最高"
-  },
-  {
-    id: "heal",
-    name: "回春灵印",
-    type: "frost",
-    color: "#8dffbe",
-    cooldown: 4.9,
-    multiplier: 1.52,
-    description: "低伤害稳循环，适合持久战"
-  },
-  {
-    id: "volley",
-    name: "月影连射",
-    type: "thunder",
-    color: "#ffe08a",
-    cooldown: 3.5,
-    multiplier: 1.58,
-    description: "连续飞矢，平衡输出"
-  },
-  {
-    id: "meteor",
-    name: "陨星坠",
-    type: "flame",
-    color: "#ff6f61",
-    cooldown: 5.8,
-    multiplier: 2.62,
-    description: "慢速重击，适合赌暴击"
-  }
+  { id: "wave", name: "裂空冲击", type: "wave", color: "#f0647f", cooldown: 4, multiplier: 1.72, description: "剑气横扫，攻守均衡" },
+  { id: "flame", name: "焰星火雨", type: "flame", color: "#ff9b54", cooldown: 4.8, multiplier: 2.08, description: "火雨坠落，高额爆发" },
+  { id: "thunder", name: "九霄雷引", type: "thunder", color: "#b997ff", cooldown: 3.2, multiplier: 1.45, description: "雷光连闪，释放最快" },
+  { id: "frost", name: "霜华绽放", type: "frost", color: "#8fdcff", cooldown: 5.4, multiplier: 2.42, description: "寒气爆裂，单次最痛" },
+  { id: "orbit", name: "星河剑阵", type: "orbit", color: "#83e8c5", cooldown: 3.8, multiplier: 1.64, description: "灵剑环绕，稳定压制" },
+  { id: "poison", name: "蚀骨毒雾", type: "poison", color: "#9be36d", cooldown: 4.4, multiplier: 1.9, description: "毒雾侵蚀，适合拉扯" },
+  { id: "bomb", name: "灵爆符阵", type: "bomb", color: "#ffd166", cooldown: 5.1, multiplier: 2.32, description: "符阵炸开，重击爆发" },
+  { id: "dash", name: "追风瞬斩", type: "wave", color: "#7ee7ff", cooldown: 2.7, multiplier: 1.28, description: "短冷却连斩，节奏很快" },
+  { id: "nova", name: "玄光星爆", type: "orbit", color: "#f2a7ff", cooldown: 6.2, multiplier: 2.85, description: "长蓄力大招，爆发最高" },
+  { id: "heal", name: "回春灵印", type: "frost", color: "#8dffbe", cooldown: 4.9, multiplier: 1.52, description: "低伤害稳循环，适合持久战" },
+  { id: "volley", name: "月影连射", type: "thunder", color: "#ffe08a", cooldown: 3.5, multiplier: 1.58, description: "连续飞矢，平衡输出" },
+  { id: "meteor", name: "陨星坠", type: "flame", color: "#ff6f61", cooldown: 5.8, multiplier: 2.62, description: "慢速重击，适合赌暴击" }
 ];
 
 function getSkillById(skillId) {
@@ -1105,11 +1957,11 @@ module.exports = { SKILLS, getSkillById };
 },
 "js/config/equipment.js": function(require, module, exports) {
 const SLOTS = [
-  { id: "weapon", name: "武器", icon: "剑" },
-  { id: "armor", name: "衣甲", icon: "甲" },
+  { id: "weapon", name: "武器", icon: "刃" },
+  { id: "armor", name: "护甲", icon: "甲" },
   { id: "ring", name: "戒指", icon: "戒" },
-  { id: "boots", name: "灵靴", icon: "靴" },
-  { id: "talisman", name: "法宝", icon: "宝" },
+  { id: "boots", name: "靴子", icon: "靴" },
+  { id: "talisman", name: "法宝", icon: "符" },
   { id: "jade", name: "灵玉", icon: "玉" }
 ];
 
@@ -1124,36 +1976,18 @@ const RARITIES = [
 const SETS = [
   { id: "cloud", name: "流云套装", color: "#82d8ff" },
   { id: "thunder", name: "苍雷套装", color: "#b69cff" },
-  { id: "flame", name: "赤霞套装", color: "#ff9c68" },
+  { id: "flame", name: "赤焰套装", color: "#ff9c68" },
   { id: "moon", name: "月影套装", color: "#c8b8ff" },
   { id: "spring", name: "灵泉套装", color: "#8ce0ae" }
 ];
 
 const EQUIPMENT_CATALOG = {
-  weapon: [
-    "青锋问道剑", "流云逐月刃", "玄铁镇妖刀", "苍雷惊鸿枪", "赤霞焚心剑", "月影无痕匕",
-    "灵泉听雨剑", "星河落尘杖", "归墟断岳斧", "太虚照夜戟", "扶摇破风弓", "九霄御雷剑"
-  ],
-  armor: [
-    "青岚护心袍", "流云鹤氅", "玄铁镇山甲", "苍雷鳞衣", "赤霞焚天铠", "月影夜行衣",
-    "灵泉长生袍", "星河璇玑甲", "归墟玄武铠", "太虚无垢衣", "扶摇轻羽衫", "九霄云纹甲"
-  ],
-  ring: [
-    "青木纳灵戒", "流云藏风戒", "玄铁定岳环", "苍雷引电戒", "赤霞离火戒", "月影匿踪环",
-    "灵泉回春戒", "星河照命环", "归墟噬灵戒", "太虚须弥环", "扶摇御风戒", "九霄紫电环"
-  ],
-  boots: [
-    "青岚踏叶靴", "流云追月履", "玄铁镇岳靴", "苍雷逐电履", "赤霞焚风靴", "月影无声履",
-    "灵泉渡水靴", "星河踏斗履", "归墟破浪靴", "太虚凌空履", "扶摇乘风靴", "九霄登云履"
-  ],
-  talisman: [
-    "青木养魂葫", "流云八卦镜", "玄铁镇妖塔", "苍雷引劫铃", "赤霞离火珠", "月影摄魂灯",
-    "灵泉净心瓶", "星河璇玑盘", "归墟吞海印", "太虚乾坤扇", "扶摇御风旗", "九霄雷纹鼓"
-  ],
-  jade: [
-    "青木长生玉", "流云自在珏", "玄铁镇心佩", "苍雷惊蛰玉", "赤霞暖阳珏", "月影幽梦佩",
-    "灵泉回春玉", "星河照命珏", "归墟玄冥佩", "太虚无相玉", "扶摇清风珏", "九霄紫霄佩"
-  ]
+  weapon: ["青锋问道剑", "流云逐月刃", "玄铁镇妖刀", "苍雷惊鸿枪", "赤焰焚心剑", "月影无痕匕", "灵泉听雨剑", "星河落尘杖", "归墟断岳斧", "太虚照夜戟", "扶摇破风弓", "九霄御雷剑"],
+  armor: ["青岚护心袍", "流云鹤氅", "玄铁镇山甲", "苍雷耀衣", "赤焰焚天铠", "月影夜行衣", "灵泉长生袍", "星河琉璃甲", "归墟玄武铠", "太虚无垢衣", "扶摇轻羽衣", "九霄云纹甲"],
+  ring: ["青木纳灵戒", "流云藏风戒", "玄铁定岳环", "苍雷引电戒", "赤焰离火戒", "月影匿踪环", "灵泉回春戒", "星河照命环", "归墟噬灵戒", "太虚须弥环", "扶摇御风戒", "九霄紫电环"],
+  boots: ["青岚踏叶靴", "流云追月履", "玄铁镇岳靴", "苍雷逐电履", "赤焰踏风靴", "月影无声履", "灵泉渡水靴", "星河踏斗履", "归墟破浪靴", "太虚凌空履", "扶摇乘风靴", "九霄登云履"],
+  talisman: ["青木养魂符", "流云八卦盘", "玄铁镇妖塔", "苍雷引劫印", "赤焰离火珠", "月影摄魂灯", "灵泉净心瓶", "星河琉璃镜", "归墟吞海印", "太虚镇坛幡", "扶摇御风幡", "九霄雷纹鼎"],
+  jade: ["青木长生玉", "流云自在珮", "玄铁镇心佩", "苍雷惊蛰玉", "赤焰暖阳珏", "月影幽梦佩", "灵泉回春玉", "星河照命珏", "归墟玄冥佩", "太虚无相玉", "扶摇清风珮", "九霄紫霄佩"]
 };
 
 const TRAITS = [
@@ -1207,12 +2041,7 @@ function getSynthesisCandidate(items) {
     if (!product) return;
     const score = product.power + materials.reduce((total, item) => total + getItemPower(item), 0) * 0.05;
     if (!best || score > best.score) {
-      best = {
-        slot,
-        materials,
-        product,
-        score
-      };
+      best = { slot, materials, product, score };
     }
   });
   return best;
@@ -1290,6 +2119,45 @@ function createEquipment(treeLevel) {
   return item;
 }
 
+function createFixedEquipment(options = {}) {
+  const slotId = options.slot;
+  const slot = SLOTS.find((entry) => entry.id === slotId);
+  if (!slot) return null;
+  const catalog = EQUIPMENT_CATALOG[slot.id] || [];
+  const catalogIndex = Math.max(0, Math.min(catalog.length - 1, Number(options.catalogIndex) || 0));
+  const rarity = RARITIES.find((entry) => entry.id === options.rarity) || RARITIES[RARITY_INDEX.legend];
+  const set = SETS.find((entry) => entry.id === options.setId) || SETS[catalogIndex % SETS.length];
+  const trait = TRAITS.find((entry) => entry.id === options.trait) || TRAITS[catalogIndex % TRAITS.length];
+  const treeLevel = Math.max(1, Number(options.treeLevel) || 12);
+  const base = Math.max(1, Math.round((4 + treeLevel * 1.72) * rarity.factor));
+  const traitValue = Math.max(1, Math.round((3 + treeLevel * 0.45) * rarity.factor));
+  const item = {
+    id: options.id || `${slot.id}-reward-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    catalogId: options.catalogId || `${slot.id}-${catalogIndex}`,
+    slot: slot.id,
+    slotName: slot.name,
+    icon: slot.icon,
+    rarity: rarity.id,
+    rarityName: rarity.name,
+    color: rarity.color,
+    name: options.name || catalog[catalogIndex],
+    setId: set.id,
+    setName: set.name,
+    setColor: set.color,
+    trait: trait.id,
+    traitName: trait.name,
+    traitValue: options.traitValue || traitValue,
+    hp: options.hp || (slot.id === "armor" || slot.id === "jade" ? base * 6 : base * 3),
+    atk: options.atk || (slot.id === "weapon" || slot.id === "talisman" ? base * 3 : Math.round(base * 1.2)),
+    spd: options.spd || (slot.id === "boots" || slot.id === "ring" ? Math.max(1, Math.round(base)) : Math.max(1, Math.round(base * 0.45))),
+    price: options.price || Math.max(8, Math.round(base * rarity.factor * 1.8)),
+    enhanceLevel: Math.max(0, Number(options.enhanceLevel) || 0),
+    style: options.style || ""
+  };
+  item.power = getItemPower(item);
+  return item;
+}
+
 function getCatalogTotal() {
   return Object.values(EQUIPMENT_CATALOG).reduce((total, names) => total + names.length, 0);
 }
@@ -1301,6 +2169,7 @@ module.exports = {
   TRAITS,
   EQUIPMENT_CATALOG,
   createEquipment,
+  createFixedEquipment,
   getItemPower,
   getCatalogTotal,
   getSynthesisCandidate,
@@ -1308,48 +2177,71 @@ module.exports = {
 };
 
 },
+"js/config/signin.js": function(require, module, exports) {
+const { createFixedEquipment } = require("./equipment");
+
+const SIGN_IN_REWARDS = [
+  { day: 1, type: "peaches", amount: 12, label: "仙桃x12" },
+  { day: 2, type: "coins", amount: 88, label: "灵石x88" },
+  { day: 3, type: "cultivation", amount: 120, label: "修为x120" },
+  { day: 4, type: "peaches", amount: 18, label: "仙桃x18" },
+  { day: 5, type: "coins", amount: 128, label: "灵石x128" },
+  { day: 6, type: "cultivation", amount: 180, label: "修为x180" },
+  { day: 7, type: "cosmetic", cosmeticId: "streetwear", label: "墨镜潮服" },
+  { day: 8, type: "peaches", amount: 24, label: "仙桃x24" },
+  { day: 9, type: "coins", amount: 188, label: "灵石x188" },
+  {
+    day: 10,
+    type: "equipment",
+    label: "流火追星弓",
+    item: () => createFixedEquipment({ slot: "weapon", catalogIndex: 10, rarity: "legend", treeLevel: 16, trait: "crit", traitValue: 18, setId: "moon", name: "流火追星弓", style: "bow", enhanceLevel: 2 })
+  },
+  { day: 11, type: "cultivation", amount: 240, label: "修为x240" },
+  { day: 12, type: "peaches", amount: 26, label: "仙桃x26" },
+  { day: 13, type: "coins", amount: 220, label: "灵石x220" },
+  { day: 14, type: "cosmetic", cosmeticId: "wuxia", label: "云水侠衣" },
+  { day: 15, type: "cultivation", amount: 320, label: "修为x320" },
+  { day: 16, type: "coins", amount: 260, label: "灵石x260" },
+  { day: 17, type: "peaches", amount: 30, label: "仙桃x30" },
+  { day: 18, type: "cultivation", amount: 420, label: "修为x420" },
+  { day: 19, type: "coins", amount: 320, label: "灵石x320" },
+  {
+    day: 20,
+    type: "equipment",
+    label: "星潮回命镜",
+    item: () => createFixedEquipment({ slot: "talisman", catalogIndex: 7, rarity: "legend", treeLevel: 18, trait: "lifesteal", traitValue: 16, setId: "spring", name: "星潮回命镜", style: "staff", enhanceLevel: 3 })
+  },
+  { day: 21, type: "cosmetic", cosmeticId: "royal", label: "金冠礼服" },
+  { day: 22, type: "peaches", amount: 36, label: "仙桃x36" },
+  { day: 23, type: "coins", amount: 360, label: "灵石x360" },
+  { day: 24, type: "cultivation", amount: 560, label: "修为x560" },
+  { day: 25, type: "peaches", amount: 42, label: "仙桃x42" },
+  { day: 26, type: "coins", amount: 420, label: "灵石x420" },
+  { day: 27, type: "cultivation", amount: 720, label: "修为x720" },
+  { day: 28, type: "peaches", amount: 48, label: "仙桃x48" },
+  { day: 29, type: "coins", amount: 520, label: "灵石x520" },
+  {
+    day: 30,
+    type: "equipment",
+    label: "太虚曜界珏",
+    item: () => createFixedEquipment({ slot: "jade", catalogIndex: 9, rarity: "legend", treeLevel: 22, trait: "counter", traitValue: 22, setId: "thunder", name: "太虚曜界珏", enhanceLevel: 5 })
+  }
+];
+
+function getSignInReward(dayIndex) {
+  return SIGN_IN_REWARDS[dayIndex] || null;
+}
+
+module.exports = { SIGN_IN_REWARDS, getSignInReward };
+
+},
 "js/config/scenes.js": function(require, module, exports) {
 const SCENES = [
-  {
-    id: "moon-ruins",
-    name: "月影遗迹",
-    background: "scene-moon",
-    accent: "#81b9ff",
-    particle: "firefly",
-    modifierName: "月华庇佑",
-    heroAttackSpeed: 0.92,
-    enemyAttackSpeed: 1
-  },
-  {
-    id: "bamboo-valley",
-    name: "青竹晨谷",
-    background: "scene-bamboo",
-    accent: "#a9e58e",
-    particle: "leaf",
-    modifierName: "清风迅捷",
-    heroAttackSpeed: 0.82,
-    enemyAttackSpeed: 0.94
-  },
-  {
-    id: "sunset-canyon",
-    name: "赤霞峡谷",
-    background: "scene-canyon",
-    accent: "#ffb36b",
-    particle: "ember",
-    modifierName: "烈焰试炼",
-    heroAttackSpeed: 1,
-    enemyAttackSpeed: 0.82
-  },
-  {
-    id: "snow-shrine",
-    name: "雪山月坛",
-    background: "scene-snow",
-    accent: "#b9e6ff",
-    particle: "snow",
-    modifierName: "霜寒凝滞",
-    heroAttackSpeed: 1.08,
-    enemyAttackSpeed: 1.12
-  }
+  { id: "moon-ruins", name: "月影遗迹", background: "scene-moon", accent: "#81b9ff", particle: "firefly", modifierName: "月华庇佑", heroAttackSpeed: 0.92, enemyAttackSpeed: 1 },
+  { id: "bamboo-valley", name: "青竹幽谷", background: "scene-bamboo", accent: "#a9e58e", particle: "leaf", modifierName: "清风迅捷", heroAttackSpeed: 0.82, enemyAttackSpeed: 0.94 },
+  { id: "sunset-canyon", name: "赤焰峡谷", background: "scene-canyon", accent: "#ffb36b", particle: "ember", modifierName: "烈焰试炼", heroAttackSpeed: 1, enemyAttackSpeed: 0.82 },
+  { id: "snow-shrine", name: "雪山月坛", background: "scene-snow", accent: "#b9e6ff", particle: "snow", modifierName: "霜寒凝滞", heroAttackSpeed: 1.08, enemyAttackSpeed: 1.12 },
+  { id: "aurora-lake", name: "极光天沼", background: "scene-aurora", accent: "#8cf8ff", particle: "firefly", modifierName: "灵潮涌动", heroAttackSpeed: 0.9, enemyAttackSpeed: 0.9 }
 ];
 
 function getSceneForStage(stage) {
@@ -1358,254 +2250,30 @@ function getSceneForStage(stage) {
 
 module.exports = { SCENES, getSceneForStage };
 
-
 },
 "js/config/bosses.js": function(require, module, exports) {
 const BOSSES = [
-  {
-    id: "crimson-demon",
-    name: "赤角魔君",
-    title: "焚山妖王",
-    type: "imp",
-    accent: "#ff684f",
-    aura: "#ffae59",
-    ornament: "horns",
-    scale: 1.18,
-    hpFactor: 1.08,
-    atkFactor: 1.04
-  },
-  {
-    id: "stone-general",
-    name: "玄岩战将",
-    title: "镇岳妖王",
-    type: "brute",
-    accent: "#d5a56b",
-    aura: "#ffe08a",
-    ornament: "crown",
-    scale: 1.22,
-    hpFactor: 1.2,
-    atkFactor: 0.98
-  },
-  {
-    id: "nether-lantern",
-    name: "幽冥灯使",
-    title: "噬魂妖王",
-    type: "wisp",
-    accent: "#aa83ff",
-    aura: "#e1b4ff",
-    ornament: "halo",
-    scale: 1.16,
-    hpFactor: 0.98,
-    atkFactor: 1.16
-  },
-  {
-    id: "frost-beast",
-    name: "霜牙巨兽",
-    title: "寒渊妖王",
-    type: "brute",
-    accent: "#82d7ff",
-    aura: "#d6f5ff",
-    ornament: "fangs",
-    scale: 1.25,
-    hpFactor: 1.14,
-    atkFactor: 1.08
-  },
-  {
-    id: "storm-fiend",
-    name: "紫电邪君",
-    title: "雷狱妖王",
-    type: "imp",
-    accent: "#b88aff",
-    aura: "#e1c7ff",
-    ornament: "lightning",
-    scale: 1.2,
-    hpFactor: 1.05,
-    atkFactor: 1.18
-  },
-  {
-    id: "moon-specter",
-    name: "月蚀幽主",
-    title: "暗月妖王",
-    type: "wisp",
-    accent: "#7f8cff",
-    aura: "#c8ceff",
-    ornament: "moon",
-    scale: 1.2,
-    hpFactor: 1.08,
-    atkFactor: 1.1
-  },
-  {
-    id: "blade-mantis",
-    name: "千刃妖侯",
-    title: "断空妖王",
-    type: "imp",
-    accent: "#80e6c4",
-    aura: "#c9ffed",
-    ornament: "blades",
-    scale: 1.22,
-    hpFactor: 1.02,
-    atkFactor: 1.2
-  },
-  {
-    id: "lotus-oracle",
-    name: "业火莲尊",
-    title: "红莲妖王",
-    type: "wisp",
-    accent: "#ff7290",
-    aura: "#ffc0cf",
-    ornament: "petals",
-    scale: 1.2,
-    hpFactor: 1.12,
-    atkFactor: 1.08
-  },
-  {
-    id: "flame-titan",
-    name: "熔岩巨灵",
-    title: "炼狱妖王",
-    type: "brute",
-    accent: "#ff8a45",
-    aura: "#ffd078",
-    ornament: "flames",
-    scale: 1.28,
-    hpFactor: 1.22,
-    atkFactor: 1.02
-  },
-  {
-    id: "rune-keeper",
-    name: "古符镇守",
-    title: "秘境妖王",
-    type: "brute",
-    accent: "#72c8ff",
-    aura: "#c7edff",
-    ornament: "runes",
-    scale: 1.24,
-    hpFactor: 1.18,
-    atkFactor: 1.04
-  },
-  {
-    id: "bone-shaman",
-    name: "白骨祭司",
-    title: "荒冢妖王",
-    type: "wisp",
-    accent: "#d6dfb7",
-    aura: "#f6ffd9",
-    ornament: "skulls",
-    scale: 1.18,
-    hpFactor: 1.06,
-    atkFactor: 1.16
-  },
-  {
-    id: "sky-dragon",
-    name: "苍穹龙影",
-    title: "天劫妖王",
-    type: "imp",
-    accent: "#ffe174",
-    aura: "#fff4b0",
-    ornament: "wings",
-    scale: 1.26,
-    hpFactor: 1.14,
-    atkFactor: 1.14
-  },
-  {
-    id: "crystal-emperor",
-    name: "玄晶帝兽",
-    title: "冰魄妖王",
-    type: "brute",
-    accent: "#73f0ff",
-    aura: "#d0fbff",
-    sprite: "boss-crystal-emperor",
-    ornament: "none",
-    scale: 1.26,
-    hpFactor: 1.16,
-    atkFactor: 1.06
-  },
-  {
-    id: "abyss-seer",
-    name: "深渊瞳主",
-    title: "无光妖王",
-    type: "wisp",
-    accent: "#955cff",
-    aura: "#d7b9ff",
-    sprite: "boss-abyss-seer",
-    ornament: "none",
-    scale: 1.2,
-    hpFactor: 1.08,
-    atkFactor: 1.16
-  },
-  {
-    id: "venom-scorpion",
-    name: "碧毒蝎后",
-    title: "万蛊妖王",
-    type: "imp",
-    accent: "#94e55c",
-    aura: "#d6ff9c",
-    ornament: "stingers",
-    scale: 1.22,
-    hpFactor: 1.1,
-    atkFactor: 1.12
-  },
-  {
-    id: "time-reaper",
-    name: "岁蚀冥使",
-    title: "流沙妖王",
-    type: "wisp",
-    accent: "#e9bd68",
-    aura: "#ffe4a8",
-    ornament: "hourglass",
-    scale: 1.2,
-    hpFactor: 1.1,
-    atkFactor: 1.14
-  },
-  {
-    id: "chain-warden",
-    name: "锁魂狱将",
-    title: "铁狱妖王",
-    type: "brute",
-    accent: "#b6c5d9",
-    aura: "#e5efff",
-    ornament: "chains",
-    scale: 1.26,
-    hpFactor: 1.22,
-    atkFactor: 1.02
-  },
-  {
-    id: "sun-crow",
-    name: "金乌炎君",
-    title: "烈阳妖王",
-    type: "imp",
-    accent: "#ffcb4d",
-    aura: "#fff0a3",
-    sprite: "boss-sun-crow",
-    ornament: "none",
-    scale: 1.24,
-    hpFactor: 1.06,
-    atkFactor: 1.2
-  },
-  {
-    id: "vine-queen",
-    name: "青藤妖后",
-    title: "森罗妖王",
-    type: "wisp",
-    accent: "#66d48a",
-    aura: "#c2f8cf",
-    sprite: "boss-vine-queen",
-    ornament: "none",
-    scale: 1.2,
-    hpFactor: 1.14,
-    atkFactor: 1.08
-  },
-  {
-    id: "masked-lord",
-    name: "百面邪君",
-    title: "迷魂妖王",
-    type: "imp",
-    accent: "#f18ee6",
-    aura: "#ffd1fa",
-    ornament: "masks",
-    scale: 1.22,
-    hpFactor: 1.08,
-    atkFactor: 1.16
-  }
+  { id: "crimson-demon", name: "赤角魔君", title: "焰山妖王", type: "imp", accent: "#ff684f", aura: "#ffae59", ornament: "horns", scale: 1.18, hpFactor: 1.08, atkFactor: 1.04 },
+  { id: "stone-general", name: "玄岩战将", title: "镇岳妖王", type: "brute", accent: "#d5a56b", aura: "#ffe08a", ornament: "crown", scale: 1.22, hpFactor: 1.2, atkFactor: 0.98 },
+  { id: "nether-lantern", name: "幽冥灯使", title: "噬魂妖王", type: "wisp", accent: "#aa83ff", aura: "#e1b4ff", ornament: "halo", scale: 1.16, hpFactor: 0.98, atkFactor: 1.16 },
+  { id: "frost-beast", name: "霜牙巨兽", title: "寒渊妖王", type: "brute", accent: "#82d7ff", aura: "#d6f5ff", ornament: "fangs", scale: 1.25, hpFactor: 1.14, atkFactor: 1.08 },
+  { id: "storm-fiend", name: "紫电邪君", title: "雷狱妖王", type: "imp", accent: "#b88aff", aura: "#e1c7ff", ornament: "lightning", scale: 1.2, hpFactor: 1.05, atkFactor: 1.18 },
+  { id: "moon-specter", name: "月蚀影主", title: "暗月妖王", type: "wisp", accent: "#7f8cff", aura: "#c8ceff", ornament: "moon", scale: 1.2, hpFactor: 1.08, atkFactor: 1.1 },
+  { id: "blade-mantis", name: "千刃妖螳", title: "断空妖王", type: "imp", accent: "#80e6c4", aura: "#c9ffed", ornament: "blades", scale: 1.22, hpFactor: 1.02, atkFactor: 1.2 },
+  { id: "lotus-oracle", name: "业火莲尊", title: "红莲妖王", type: "wisp", accent: "#ff7290", aura: "#ffc0cf", ornament: "petals", scale: 1.2, hpFactor: 1.12, atkFactor: 1.08 },
+  { id: "flame-titan", name: "熔岩巨灵", title: "炎狱妖王", type: "brute", accent: "#ff8a45", aura: "#ffd078", ornament: "flames", scale: 1.28, hpFactor: 1.22, atkFactor: 1.02 },
+  { id: "rune-keeper", name: "古符镇守", title: "秘境妖王", type: "brute", accent: "#72c8ff", aura: "#c7edff", ornament: "runes", scale: 1.24, hpFactor: 1.18, atkFactor: 1.04 },
+  { id: "bone-shaman", name: "白骨祭司", title: "荒冢妖王", type: "wisp", accent: "#d6dfb7", aura: "#f6ffd9", ornament: "skulls", scale: 1.18, hpFactor: 1.06, atkFactor: 1.16 },
+  { id: "sky-dragon", name: "苍穹龙影", title: "天劫妖王", type: "imp", accent: "#ffe174", aura: "#fff4b0", ornament: "wings", scale: 1.26, hpFactor: 1.14, atkFactor: 1.14 },
+  { id: "crystal-emperor", name: "玄晶帝兽", title: "冰魄妖王", type: "brute", accent: "#73f0ff", aura: "#d0fbff", sprite: "boss-crystal-emperor", ornament: "none", scale: 1.26, hpFactor: 1.16, atkFactor: 1.06 },
+  { id: "abyss-seer", name: "深渊瞳主", title: "无光妖王", type: "wisp", accent: "#955cff", aura: "#d7b9ff", sprite: "boss-abyss-seer", ornament: "none", scale: 1.2, hpFactor: 1.08, atkFactor: 1.16 },
+  { id: "venom-scorpion", name: "碧毒蝎后", title: "万蛊妖王", type: "imp", accent: "#94e55c", aura: "#d6ff9c", ornament: "stingers", scale: 1.22, hpFactor: 1.1, atkFactor: 1.12 },
+  { id: "time-reaper", name: "岁蚀冥使", title: "流沙妖王", type: "wisp", accent: "#e9bd68", aura: "#ffe4a8", ornament: "hourglass", scale: 1.2, hpFactor: 1.1, atkFactor: 1.14 },
+  { id: "chain-warden", name: "锁魂狱将", title: "铁狱妖王", type: "brute", accent: "#b6c5d9", aura: "#e5efff", ornament: "chains", scale: 1.26, hpFactor: 1.22, atkFactor: 1.02 },
+  { id: "sun-crow", name: "金乌炎君", title: "烈阳妖王", type: "imp", accent: "#ffcb4d", aura: "#fff0a3", sprite: "boss-sun-crow", ornament: "none", scale: 1.24, hpFactor: 1.06, atkFactor: 1.2 },
+  { id: "vine-queen", name: "青藤妖后", title: "森罗妖王", type: "wisp", accent: "#66d48a", aura: "#c2f8cf", sprite: "boss-vine-queen", ornament: "none", scale: 1.2, hpFactor: 1.14, atkFactor: 1.08 },
+  { id: "masked-lord", name: "百面邪君", title: "迷魂妖王", type: "imp", accent: "#f18ee6", aura: "#ffd1fa", ornament: "masks", scale: 1.22, hpFactor: 1.08, atkFactor: 1.16 },
+  { id: "eclipse-monarch", name: "蚀曜君主", title: "永夜妖王", type: "moon-assassin", accent: "#90f6ff", aura: "#d9fbff", sprite: "boss-eclipse-monarch", ornament: "none", scale: 1.24, hpFactor: 1.12, atkFactor: 1.18 }
 ];
 
 function getBossForStage(stage) {
@@ -1658,6 +2326,7 @@ class Profile {
     this.cultivation = saved.cultivation || 0;
     this.stage = saved.stage || 1;
     this.equipment = saved.equipment || {};
+    this.inventory = Array.isArray(saved.inventory) ? saved.inventory : [];
     this.discovered = saved.discovered || {};
     this.exploreEnergy = saved.exploreEnergy === undefined ? 5 : saved.exploreEnergy;
     this.exploreCount = saved.exploreCount || 0;
@@ -1667,6 +2336,8 @@ class Profile {
     this.pvpWins = saved.pvpWins || 0;
     this.pvpLosses = saved.pvpLosses || 0;
     this.rankScore = saved.rankScore === undefined ? 1000 : saved.rankScore;
+    this.signInClaimedDays = saved.signInClaimedDays || 0;
+    this.signInLastDate = saved.signInLastDate || "";
     this.isMaxTestAccount = typeof wx !== "undefined" && typeof wx.getCurrentAccount === "function" && wx.getCurrentAccount() === "tester_max";
     if (this.isMaxTestAccount) this.applyMaxTestPreset();
   }
@@ -1801,6 +2472,39 @@ class Profile {
   equip(item) {
     this.equipment[item.slot] = item;
     this.discover(item);
+  }
+
+  addToInventory(item) {
+    if (!item) return false;
+    this.inventory.push(item);
+    this.discover(item);
+    return true;
+  }
+
+  getInventory() {
+    return [...this.inventory].sort((left, right) => (right.power || 0) - (left.power || 0));
+  }
+
+  takeInventoryItem(id) {
+    const index = this.inventory.findIndex((item) => item.id === id);
+    if (index < 0) return null;
+    return this.inventory.splice(index, 1)[0];
+  }
+
+  sellInventoryItem(id) {
+    const item = this.takeInventoryItem(id);
+    if (!item) return null;
+    this.coins += item.price || 0;
+    return item;
+  }
+
+  equipFromInventory(id) {
+    const item = this.takeInventoryItem(id);
+    if (!item) return null;
+    const oldItem = this.getEquipped(item.slot);
+    if (oldItem) this.addToInventory(oldItem);
+    this.equip(item);
+    return { item, oldItem };
   }
 
   getEquipped(slot) {
@@ -1958,6 +2662,7 @@ class Profile {
       cultivation: this.cultivation,
       stage: this.stage,
       equipment: this.equipment,
+      inventory: this.inventory,
       discovered: this.discovered,
       exploreEnergy: this.exploreEnergy,
       exploreCount: this.exploreCount,
@@ -1968,7 +2673,9 @@ class Profile {
       ,
       pvpWins: this.pvpWins,
       pvpLosses: this.pvpLosses,
-      rankScore: this.rankScore
+      rankScore: this.rankScore,
+      signInClaimedDays: this.signInClaimedDays,
+      signInLastDate: this.signInLastDate
     };
   }
 
@@ -1998,7 +2705,6 @@ function getRealm(cultivation) {
 
 module.exports = { REALMS, getRealm };
 
-
 },
 "js/config/cosmetics.js": function(require, module, exports) {
 const COSMETICS = [
@@ -2010,7 +2716,7 @@ const COSMETICS = [
     sprite: "hero-skin-streetwear",
     color: "#f1bf62",
     bonus: { atk: 8, crit: 6 },
-    bonusText: "攻击 +8 · 会心 +6%"
+    bonusText: "攻击 +8  暴击 +6%"
   },
   {
     id: "wuxia",
@@ -2020,7 +2726,7 @@ const COSMETICS = [
     sprite: "hero-skin-wuxia",
     color: "#78c9ff",
     bonus: { hp: 55, dodge: 6 },
-    bonusText: "气血 +55 · 闪避 +6%"
+    bonusText: "气血 +55  闪避 +6%"
   },
   {
     id: "royal",
@@ -2030,7 +2736,7 @@ const COSMETICS = [
     sprite: "hero-skin-royal",
     color: "#ffd86b",
     bonus: { atk: 12, hp: 35 },
-    bonusText: "攻击 +12 · 气血 +35"
+    bonusText: "攻击 +12  气血 +35"
   },
   {
     id: "bunny",
@@ -2040,27 +2746,137 @@ const COSMETICS = [
     sprite: "hero-skin-bunny",
     color: "#e5b8ff",
     bonus: { spd: 30, combo: 8 },
-    bonusText: "速度 +30 · 连击 +8%"
+    bonusText: "速度 +30  连击 +8%"
   },
   {
     id: "nurse",
-    name: "治愈护士",
+    name: "治疗护士",
     type: "skin",
     price: 240,
     sprite: "hero-skin-nurse",
     color: "#ff9fb0",
     bonus: { hp: 80, lifesteal: 6 },
-    bonusText: "气血 +80 · 吸血 +6%"
+    bonusText: "气血 +80  吸血 +6%"
   },
   {
     id: "bocchi-shirt",
-    name: "孤独摇滚痛衣",
+    name: "孤独摇滚T恤",
     type: "skin",
     price: 300,
     sprite: "hero-skin-bocchi-shirt",
     color: "#ff9bc3",
     bonus: { atk: 10, spd: 24, crit: 5 },
-    bonusText: "攻击 +10 · 速度 +24 · 会心 +5%"
+    bonusText: "攻击 +10  速度 +24  暴击 +5%"
+  },
+  {
+    id: "samurai",
+    name: "战国武士",
+    type: "skin",
+    price: 99999,
+    sprite: "hero-skin-samurai",
+    color: "#d64b43",
+    bonus: { atk: 88, crit: 12 },
+    bonusText: "攻击 +88  暴击 +12%"
+  },
+  {
+    id: "cyberpunk",
+    name: "霓虹赛博",
+    type: "skin",
+    price: 99999,
+    sprite: "hero-skin-cyberpunk",
+    color: "#1ce3ff",
+    bonus: { atk: 42, spd: 66, combo: 10 },
+    bonusText: "攻击 +42  速度 +66  连击 +10%"
+  },
+  {
+    id: "frost-king",
+    name: "极寒冰王",
+    type: "skin",
+    price: 99999,
+    sprite: "hero-skin-frost-king",
+    color: "#9fe7ff",
+    bonus: { hp: 180, dodge: 10 },
+    bonusText: "气血 +180  闪避 +10%"
+  },
+  {
+    id: "magma-warlord",
+    name: "熔岩战将",
+    type: "skin",
+    price: 99999,
+    sprite: "hero-skin-magma-warlord",
+    color: "#ff7a3c",
+    bonus: { atk: 96, lifesteal: 8 },
+    bonusText: "攻击 +96  吸血 +8%"
+  },
+  {
+    id: "jade-monk",
+    name: "翡翠僧侣",
+    type: "skin",
+    price: 99999,
+    sprite: "hero-skin-jade-monk",
+    color: "#55d69c",
+    bonus: { hp: 120, counter: 12 },
+    bonusText: "气血 +120  反击 +12%"
+  },
+  {
+    id: "desert-pharaoh",
+    name: "沙海法老",
+    type: "skin",
+    price: 99999,
+    sprite: "hero-skin-desert-pharaoh",
+    color: "#d8b15b",
+    bonus: { atk: 52, hp: 108, crit: 8 },
+    bonusText: "攻击 +52  气血 +108  暴击 +8%"
+  },
+  {
+    id: "jungle-guardian",
+    name: "丛林守卫",
+    type: "skin",
+    price: 99999,
+    sprite: "hero-skin-jungle-guardian",
+    color: "#6fc56f",
+    bonus: { hp: 140, dodge: 8, combo: 8 },
+    bonusText: "气血 +140  闪避 +8%  连击 +8%"
+  },
+  {
+    id: "steampunk",
+    name: "蒸汽发明家",
+    type: "skin",
+    price: 99999,
+    sprite: "hero-skin-steampunk",
+    color: "#c48d57",
+    bonus: { atk: 36, spd: 40, counter: 10 },
+    bonusText: "攻击 +36  速度 +40  反击 +10%"
+  },
+  {
+    id: "star-priest",
+    name: "星穹祭司",
+    type: "skin",
+    price: 99999,
+    sprite: "hero-skin-star-priest",
+    color: "#b6a7ff",
+    bonus: { hp: 160, crit: 10, lifesteal: 6 },
+    bonusText: "气血 +160  暴击 +10%  吸血 +6%"
+  },
+  {
+    id: "sakura-festival",
+    name: "樱花庆典",
+    type: "skin",
+    price: 99999,
+    sprite: "hero-skin-sakura-festival",
+    color: "#ff8fb4",
+    bonus: { spd: 52, combo: 12 },
+    bonusText: "速度 +52  连击 +12%"
+  },
+  {
+    id: "deep-sea-captain",
+    name: "深海船长",
+    type: "skin",
+    price: 99999,
+    sprite: "hero-skin-deep-sea-captain",
+    color: "#3fc9d8",
+    bonus: { atk: 66, hp: 166, dodge: 10 },
+    bonusText: "攻击 +66  气血 +166  闪避 +10%"
   }
 ];
 
@@ -2173,21 +2989,39 @@ const IMAGE_PATHS = {
   "scene-bamboo": "assets/images/scenes/bamboo.jpg",
   "scene-canyon": "assets/images/scenes/canyon.jpg",
   "scene-snow": "assets/images/scenes/snow.jpg",
+  "scene-aurora": "assets/images/scenes/aurora.png",
   tree: "assets/images/spirit-tree.png",
   "enemy-imp": "assets/images/enemies/imp.png",
   "enemy-brute": "assets/images/enemies/brute.png",
   "enemy-wisp": "assets/images/enemies/wisp.png",
+  "enemy-bamboo-scout": "assets/images/enemies/bamboo-scout.png",
+  "enemy-stone-beast": "assets/images/enemies/stone-beast.png",
+  "enemy-vine-spirit": "assets/images/enemies/vine-spirit.png",
+  "enemy-frostwing": "assets/images/enemies/frostwing.png",
+  "enemy-moon-assassin": "assets/images/enemies/moon-assassin.png",
   "boss-crystal-emperor": "assets/images/bosses/crystal-emperor.png",
   "boss-abyss-seer": "assets/images/bosses/abyss-seer.png",
   "boss-sun-crow": "assets/images/bosses/sun-crow.png",
   "boss-vine-queen": "assets/images/bosses/vine-queen.png",
+  "boss-eclipse-monarch": "assets/images/bosses/eclipse-monarch.png",
   "hero-main-character": "assets/images/heroes/main-character.png",
   "hero-skin-streetwear": "assets/images/heroes/skins/streetwear.png",
   "hero-skin-wuxia": "assets/images/heroes/skins/wuxia.png",
   "hero-skin-royal": "assets/images/heroes/skins/royal.png",
   "hero-skin-bunny": "assets/images/heroes/skins/bunny.png",
   "hero-skin-nurse": "assets/images/heroes/skins/nurse.png",
-  "hero-skin-bocchi-shirt": "assets/images/heroes/skins/bocchi-shirt.png"
+  "hero-skin-bocchi-shirt": "assets/images/heroes/skins/bocchi-shirt.png",
+  "hero-skin-samurai": "assets/images/heroes/skins/samurai.png",
+  "hero-skin-cyberpunk": "assets/images/heroes/skins/cyberpunk.png",
+  "hero-skin-frost-king": "assets/images/heroes/skins/frost-king.png",
+  "hero-skin-magma-warlord": "assets/images/heroes/skins/magma-warlord.png",
+  "hero-skin-jade-monk": "assets/images/heroes/skins/jade-monk.png",
+  "hero-skin-desert-pharaoh": "assets/images/heroes/skins/desert-pharaoh.png",
+  "hero-skin-jungle-guardian": "assets/images/heroes/skins/jungle-guardian.png",
+  "hero-skin-steampunk": "assets/images/heroes/skins/steampunk.png",
+  "hero-skin-star-priest": "assets/images/heroes/skins/star-priest.png",
+  "hero-skin-sakura-festival": "assets/images/heroes/skins/sakura-festival.png",
+  "hero-skin-deep-sea-captain": "assets/images/heroes/skins/deep-sea-captain.png"
 };
 
 class AssetLoader {
@@ -2260,6 +3094,8 @@ class UI {
     this.safeArea = options.safeArea || { top: 0, bottom: height };
     this.menuButton = options.menuButton || null;
     this.layout = this.createLayout();
+    this.shopPage = 0;
+    this.lastShopTotal = 0;
   }
 
   clamp(value, min, max) {
@@ -2602,7 +3438,18 @@ class UI {
       "hero-skin-royal": { style: "spear", color: "#ffe6a3", accent: "#ffbd45", homeX: 0.71, homeY: 0.61, battleX: 0.7, battleY: 0.63, homeAngle: -0.42, battleAngle: -0.5, scale: 1.12 },
       "hero-skin-bunny": { style: "bow", color: "#eecbff", accent: "#ffeb8a", homeX: 0.69, homeY: 0.58, battleX: 0.68, battleY: 0.61, homeAngle: -0.48, battleAngle: -0.58, scale: 0.98 },
       "hero-skin-nurse": { style: "staff", color: "#fff4f6", accent: "#ff8fa3", homeX: 0.68, homeY: 0.6, battleX: 0.68, battleY: 0.62, homeAngle: -0.38, battleAngle: -0.48, scale: 0.95 },
-      "hero-skin-bocchi-shirt": { style: "guitar", color: "#ff9bc3", accent: "#ffe17a", homeX: 0.68, homeY: 0.62, battleX: 0.67, battleY: 0.64, homeAngle: -0.58, battleAngle: -0.66, scale: 0.92 }
+      "hero-skin-bocchi-shirt": { style: "guitar", color: "#ff9bc3", accent: "#ffe17a", homeX: 0.68, homeY: 0.62, battleX: 0.67, battleY: 0.64, homeAngle: -0.58, battleAngle: -0.66, scale: 0.92 },
+      "hero-skin-samurai": { style: "katana", color: "#f9d39b", accent: "#d64b43", homeX: 0.72, homeY: 0.58, battleX: 0.7, battleY: 0.61, homeAngle: -0.84, battleAngle: -0.9, scale: 1.04 },
+      "hero-skin-cyberpunk": { style: "laser", color: "#dbfbff", accent: "#1ce3ff", homeX: 0.71, homeY: 0.59, battleX: 0.69, battleY: 0.61, homeAngle: -0.72, battleAngle: -0.82, scale: 1 },
+      "hero-skin-frost-king": { style: "ice-staff", color: "#e9f8ff", accent: "#9fe7ff", homeX: 0.69, homeY: 0.58, battleX: 0.69, battleY: 0.61, homeAngle: -0.44, battleAngle: -0.54, scale: 1.02 },
+      "hero-skin-magma-warlord": { style: "lava-axe", color: "#ffd0a8", accent: "#ff7a3c", homeX: 0.73, homeY: 0.6, battleX: 0.71, battleY: 0.63, homeAngle: -0.58, battleAngle: -0.66, scale: 1.08 },
+      "hero-skin-jade-monk": { style: "jade-staff", color: "#d9ffe9", accent: "#55d69c", homeX: 0.69, homeY: 0.59, battleX: 0.68, battleY: 0.61, homeAngle: -0.4, battleAngle: -0.48, scale: 0.98 },
+      "hero-skin-desert-pharaoh": { style: "scepter", color: "#f8e2aa", accent: "#d8b15b", homeX: 0.7, homeY: 0.59, battleX: 0.69, battleY: 0.62, homeAngle: -0.38, battleAngle: -0.46, scale: 1.04 },
+      "hero-skin-jungle-guardian": { style: "vine-bow", color: "#def6c9", accent: "#6fc56f", homeX: 0.69, homeY: 0.58, battleX: 0.68, battleY: 0.61, homeAngle: -0.52, battleAngle: -0.6, scale: 1 },
+      "hero-skin-steampunk": { style: "hammer", color: "#f9d9b2", accent: "#c48d57", homeX: 0.72, homeY: 0.6, battleX: 0.7, battleY: 0.62, homeAngle: -0.63, battleAngle: -0.72, scale: 0.98 },
+      "hero-skin-star-priest": { style: "star-orb", color: "#f1ebff", accent: "#b6a7ff", homeX: 0.68, homeY: 0.59, battleX: 0.68, battleY: 0.62, homeAngle: -0.34, battleAngle: -0.44, scale: 1 },
+      "hero-skin-sakura-festival": { style: "fan", color: "#ffe5ef", accent: "#ff8fb4", homeX: 0.7, homeY: 0.58, battleX: 0.69, battleY: 0.61, homeAngle: -0.48, battleAngle: -0.56, scale: 0.96 },
+      "hero-skin-deep-sea-captain": { style: "trident", color: "#dffcff", accent: "#3fc9d8", homeX: 0.72, homeY: 0.61, battleX: 0.7, battleY: 0.63, homeAngle: -0.5, battleAngle: -0.58, scale: 1.12 }
     };
     const base = presets[sprite] || presets["hero-main-character"];
     return {
@@ -2635,10 +3482,10 @@ class UI {
     if (options.flip) ctx.scale(-1, 1);
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
-    ctx.shadowColor = weapon.rarity === "legend" ? color : "rgba(0,0,0,0.35)";
-    ctx.shadowBlur = weapon.rarity === "legend" ? 16 : 4;
+    ctx.shadowColor = "rgba(0,0,0,0.35)";
+    ctx.shadowBlur = 4;
 
-    if (style === "staff") {
+    if (style === "staff" || style === "ice-staff" || style === "jade-staff" || style === "scepter" || style === "star-orb") {
       ctx.strokeStyle = "#6a432b";
       ctx.lineWidth = 7;
       ctx.beginPath();
@@ -2653,7 +3500,28 @@ class UI {
       ctx.stroke();
       ctx.fillStyle = color;
       ctx.beginPath();
-      ctx.arc(0, -length - 8, 9, 0, Math.PI * 2);
+      if (style === "ice-staff") {
+        ctx.moveTo(0, -length - 20);
+        ctx.lineTo(11, -length - 6);
+        ctx.lineTo(0, -length + 8);
+        ctx.lineTo(-11, -length - 6);
+        ctx.closePath();
+      } else if (style === "scepter") {
+        ctx.arc(0, -length - 9, 10, 0, Math.PI * 2);
+        ctx.moveTo(-12, -length - 2);
+        ctx.lineTo(12, -length - 2);
+      } else if (style === "star-orb") {
+        for (let i = 0; i < 5; i += 1) {
+          const a = -Math.PI / 2 + i * Math.PI * 2 / 5;
+          const r = i === 0 ? 13 : 13;
+          ctx.lineTo(Math.cos(a) * r, -length - 8 + Math.sin(a) * r);
+          const b = a + Math.PI / 5;
+          ctx.lineTo(Math.cos(b) * 6, -length - 8 + Math.sin(b) * 6);
+        }
+        ctx.closePath();
+      } else {
+        ctx.arc(0, -length - 8, 9, 0, Math.PI * 2);
+      }
       ctx.fill();
       ctx.strokeStyle = "#fff4bc";
       ctx.lineWidth = 2;
@@ -2666,7 +3534,7 @@ class UI {
       ctx.moveTo(0, -length - 15);
       ctx.lineTo(0, -length - 1);
       ctx.stroke();
-    } else if (style === "bow") {
+    } else if (style === "bow" || style === "vine-bow") {
       ctx.strokeStyle = color;
       ctx.lineWidth = 5;
       ctx.beginPath();
@@ -2685,7 +3553,15 @@ class UI {
       ctx.lineTo(length * 0.31, -length * 0.31);
       ctx.lineTo(length * 0.22, -length * 0.38);
       ctx.stroke();
-    } else if (style === "spear") {
+      if (style === "vine-bow") {
+        ctx.strokeStyle = accent;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(-length * 0.08, -length * 0.55, 5, 0, Math.PI * 1.7);
+        ctx.arc(length * 0.11, -length * 0.18, 4, Math.PI, Math.PI * 2.5);
+        ctx.stroke();
+      }
+    } else if (style === "spear" || style === "trident") {
       ctx.strokeStyle = "#6a432b";
       ctx.lineWidth = 6;
       ctx.beginPath();
@@ -2700,6 +3576,16 @@ class UI {
       ctx.lineTo(-10, -length * 1.02);
       ctx.closePath();
       ctx.fill();
+      if (style === "trident") {
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 5;
+        ctx.beginPath();
+        ctx.moveTo(-14, -length * 1.11);
+        ctx.lineTo(-10, -length * 0.92);
+        ctx.moveTo(14, -length * 1.11);
+        ctx.lineTo(10, -length * 0.92);
+        ctx.stroke();
+      }
       ctx.strokeStyle = accent;
       ctx.lineWidth = 3;
       ctx.beginPath();
@@ -2729,8 +3615,54 @@ class UI {
       ctx.moveTo(-10, -length * 0.58);
       ctx.lineTo(10, -length * 0.58);
       ctx.stroke();
+    } else if (style === "lava-axe" || style === "hammer") {
+      ctx.strokeStyle = "#6a432b";
+      ctx.lineWidth = 7;
+      ctx.beginPath();
+      ctx.moveTo(0, grip + 9);
+      ctx.lineTo(0, -length * 0.9);
+      ctx.stroke();
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      if (style === "lava-axe") {
+        ctx.moveTo(-6, -length * 0.88);
+        ctx.quadraticCurveTo(-34, -length * 0.74, -18, -length * 0.52);
+        ctx.lineTo(0, -length * 0.63);
+        ctx.lineTo(18, -length * 0.52);
+        ctx.quadraticCurveTo(34, -length * 0.74, 6, -length * 0.88);
+      } else {
+        ctx.moveTo(-16, -length * 0.92);
+        ctx.lineTo(16, -length * 0.92);
+        ctx.quadraticCurveTo(22, -length * 0.92, 22, -length * 0.86);
+        ctx.lineTo(22, -length * 0.78);
+        ctx.quadraticCurveTo(22, -length * 0.72, 16, -length * 0.72);
+        ctx.lineTo(-16, -length * 0.72);
+        ctx.quadraticCurveTo(-22, -length * 0.72, -22, -length * 0.78);
+        ctx.lineTo(-22, -length * 0.86);
+        ctx.quadraticCurveTo(-22, -length * 0.92, -16, -length * 0.92);
+      }
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = accent;
+      ctx.lineWidth = 3;
+      ctx.stroke();
+    } else if (style === "fan") {
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.moveTo(0, grip);
+      ctx.arc(0, -length * 0.12, length * 0.38, -Math.PI * 0.92, -Math.PI * 0.08);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = accent;
+      ctx.lineWidth = 2;
+      for (let i = -2; i <= 2; i += 1) {
+        ctx.beginPath();
+        ctx.moveTo(0, grip);
+        ctx.lineTo(i * length * 0.12, -length * 0.42 + Math.abs(i) * 3);
+        ctx.stroke();
+      }
     } else {
-      const bladeWidth = style === "blade" ? 13 : 8;
+      const bladeWidth = style === "blade" || style === "laser" ? 13 : style === "katana" ? 6 : 8;
       ctx.strokeStyle = "#6a432b";
       ctx.lineWidth = 7;
       ctx.beginPath();
@@ -2743,12 +3675,12 @@ class UI {
       ctx.moveTo(-13, -grip);
       ctx.lineTo(13, -grip);
       ctx.stroke();
-      ctx.fillStyle = color;
+      ctx.fillStyle = style === "laser" ? accent : color;
       ctx.beginPath();
       ctx.moveTo(0, -length);
-      ctx.lineTo(bladeWidth, -grip - 2);
+      ctx.lineTo(bladeWidth, -grip - (style === "katana" ? 8 : 2));
       ctx.lineTo(0, -grip - 12);
-      ctx.lineTo(-bladeWidth, -grip - 2);
+      ctx.lineTo(-bladeWidth, -grip - (style === "katana" ? 8 : 2));
       ctx.closePath();
       ctx.fill();
       ctx.strokeStyle = "rgba(255,255,255,0.78)";
@@ -2885,9 +3817,6 @@ class UI {
       this.fillPanel({ x, y, width: layout.width, height: layout.height }, "rgba(8, 22, 39, 0.82)", 7);
       ctx.strokeStyle = entry.item ? entry.item.color : "rgba(196, 221, 240, 0.36)";
       ctx.strokeRect(x, y, layout.width, layout.height);
-      if (entry.item && entry.item.rarity === "legend") {
-        this.drawLegendAura(x + layout.width / 2, y + 18, 12, Date.now() / 1000 + index);
-      }
       ctx.textAlign = "center";
       ctx.fillStyle = entry.item ? entry.item.color : "#a7b7c5";
       ctx.font = "bold 15px sans-serif";
@@ -2916,9 +3845,6 @@ class UI {
     ctx.fillText("灵树掉落装备", this.width / 2, modal.y + 32 * modal.scale);
 
     ctx.fillStyle = item.color;
-    if (item.rarity === "legend") {
-      this.drawLegendAura(this.width / 2, modal.y + 98 * modal.scale, 44 * modal.scale, Date.now() / 1000);
-    }
     ctx.beginPath();
     ctx.arc(this.width / 2, modal.y + 98 * modal.scale, 34 * modal.scale, 0, Math.PI * 2);
     ctx.fill();
@@ -2948,34 +3874,6 @@ class UI {
     ctx.fillText(`妖力：${comparison.currentPower} → ${item.power}  (${this.formatDelta(comparison.powerDelta)})`, this.width / 2, modal.y + 329 * modal.scale);
     this.drawButton(modal.sell, "#9b6b3f", `分解 +${item.price}`);
     this.drawButton(modal.equip, "#3c9063", "穿戴");  }
-
-  drawLegendAura(x, y, radius, elapsed = 0) {
-    const ctx = this.ctx;
-    ctx.save();
-    ctx.globalAlpha = 0.88;
-    ctx.strokeStyle = "#ffd86b";
-    ctx.shadowColor = "#ffbd3d";
-    ctx.shadowBlur = 24;
-    ctx.lineWidth = 5;
-    ctx.beginPath();
-    ctx.arc(x, y, radius + Math.sin(elapsed * 4) * 4, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.globalAlpha = 0.46;
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.arc(x, y, radius + 8 + Math.sin(elapsed * 5) * 3, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.globalAlpha = 0.85;
-    for (let index = 0; index < 8; index += 1) {
-      const angle = elapsed * 1.8 + index * Math.PI / 4;
-      const distance = radius + 11 + Math.sin(elapsed * 3 + index) * 4;
-      ctx.fillStyle = index % 2 ? "#fff2a8" : "#ffbd3d";
-      ctx.beginPath();
-      ctx.arc(x + Math.cos(angle) * distance, y + Math.sin(angle) * distance, 2.5, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    ctx.restore();
-  }
 
   drawAvatar(entry, x, y, size = 28) {
     const ctx = this.ctx;
@@ -3291,7 +4189,7 @@ class UI {
       });
       ctx.fillStyle = "#8b6d4b";
       ctx.font = "12px sans-serif";
-      ctx.fillText("金色神品装备会出现特殊光效", this.width / 2, modal.y + 284);
+      ctx.fillText("金色神品装备会自动进入背包保留", this.width / 2, modal.y + 284);
       this.drawButton(modal.close, "#7f715f", "关闭");
       return;
     }
@@ -3311,9 +4209,6 @@ class UI {
       this.fillPanel(rect, item.rarity === "legend" ? "rgba(255, 210, 80, 0.18)" : "rgba(91, 73, 57, 0.08)", 7);
       ctx.strokeStyle = item.color;
       ctx.strokeRect(rect.x, rect.y, rect.width, rect.height);
-      if (item.rarity === "legend") {
-        this.drawLegendAura(rect.x + 20, rect.y + rect.height / 2, 14, elapsed + index);
-      }
       ctx.textAlign = "left";
       ctx.fillStyle = item.color;
       ctx.font = "bold 14px sans-serif";
@@ -3372,6 +4267,12 @@ class UI {
     const ctx = this.ctx;
     const modal = this.getShopLayout();
     const cosmetics = profile.getCosmetics();
+    this.lastShopTotal = cosmetics.length;
+    const pageSize = modal.cosmeticRows.length;
+    const pageCount = Math.max(1, Math.ceil(cosmetics.length / pageSize));
+    this.shopPage = this.clamp(this.shopPage || 0, 0, pageCount - 1);
+    const pageStart = this.shopPage * pageSize;
+    const visibleCosmetics = cosmetics.slice(pageStart, pageStart + pageSize);
     ctx.fillStyle = "rgba(0, 0, 0, 0.64)";
     ctx.fillRect(0, 0, this.width, this.height);
     ctx.fillStyle = "#f7edd7";
@@ -3386,7 +4287,7 @@ class UI {
     ctx.font = "12px sans-serif";
     ctx.fillText(`当前灵石 ${profile.coins} · 皮肤自带属性加成`, this.width / 2, modal.y + 72);
 
-    cosmetics.forEach((item, index) => {
+    visibleCosmetics.forEach((item, index) => {
       const rect = modal.cosmeticRows[index];
       this.fillPanel(rect, item.equipped ? "rgba(60, 144, 99, 0.22)" : "rgba(91, 73, 57, 0.08)", 7);
       ctx.strokeStyle = item.equipped ? "#3c9063" : "rgba(118, 90, 66, 0.24)";
@@ -3410,7 +4311,10 @@ class UI {
     ctx.textAlign = "center";
     ctx.fillStyle = "#765a42";
     ctx.font = "11px sans-serif";
-    ctx.fillText(shopMessage || "所有皮肤只能通过灵石直接购买", this.width / 2, modal.close.y - 13);
+    ctx.fillText(shopMessage || "所有皮肤只能通过灵石直接购买", this.width / 2, modal.prev.y - 10);
+    ctx.fillText(`第 ${this.shopPage + 1} / ${pageCount} 页`, this.width / 2, modal.close.y - 12);
+    this.drawButton(modal.prev, this.shopPage > 0 ? "#8b6d4b" : "#c5bba7", "上一页");
+    this.drawButton(modal.next, this.shopPage < pageCount - 1 ? "#8b6d4b" : "#c5bba7", "下一页");
     this.drawButton(modal.close, "#7f715f", "关闭");
   }
 
@@ -3433,6 +4337,8 @@ class UI {
         width: rowWidth,
         height: rowHeight
       })),
+      prev: { x: x + 18, y: y + height - 106, width: (width - 48) / 2, height: 35 },
+      next: { x: x + 30 + (width - 48) / 2, y: y + height - 106, width: (width - 48) / 2, height: 35 },
       close: { x: x + 18, y: y + height - 61, width: width - 36, height: 43 }
     };
   }
@@ -4437,7 +5343,21 @@ class UI {
   }
 
   getCosmeticIndexAt(x, y) {
-    return this.getShopLayout().cosmeticRows.findIndex((rect) => this.contains(rect, x, y));
+    const layout = this.getShopLayout();
+    const pageSize = layout.cosmeticRows.length;
+    const pageCount = Math.max(1, Math.ceil((this.lastShopTotal || pageSize) / pageSize));
+    if (this.contains(layout.prev, x, y)) {
+      this.shopPage = this.clamp((this.shopPage || 0) - 1, 0, pageCount - 1);
+      return -1;
+    }
+    if (this.contains(layout.next, x, y)) {
+      this.shopPage = this.clamp((this.shopPage || 0) + 1, 0, pageCount - 1);
+      return -1;
+    }
+    const rowIndex = layout.cosmeticRows.findIndex((rect) => this.contains(rect, x, y));
+    if (rowIndex < 0) return -1;
+    const itemIndex = (this.shopPage || 0) * pageSize + rowIndex;
+    return itemIndex < (this.lastShopTotal || 0) ? itemIndex : -1;
   }
 
   isShopCloseButton(x, y) {
@@ -4488,6 +5408,393 @@ class UI {
 
   isContinueButton(x, y) {
     return this.contains(this.getResultLayout().continueButton, x, y);
+  }
+
+  createLayout() {
+    const safeTop = Math.max(0, this.safeArea.top || 0);
+    const safeBottom = Math.min(this.height, this.safeArea.bottom || this.height);
+    const menuBottom = this.menuButton ? this.menuButton.bottom : safeTop;
+    const contentTop = Math.max(safeTop + 5, menuBottom + 5);
+    const edge = this.clamp(this.width * 0.026, 8, 13);
+    const gap = this.clamp(this.width * 0.018, 5, 8);
+    const resource = { x: 0, y: contentTop, width: this.width, height: 36 };
+    const summary = { x: edge, y: resource.y + resource.height + 5, width: this.width - edge * 2, height: 42 };
+    const utilityY = summary.y + summary.height + 5;
+    const utilityHeight = 30;
+    const utilityWidth = (this.width - edge * 2 - gap * 4) / 5;
+    const utilities = {
+      explore: { x: edge, y: utilityY, width: utilityWidth, height: utilityHeight },
+      inventory: { x: edge + (utilityWidth + gap), y: utilityY, width: utilityWidth, height: utilityHeight },
+      collection: { x: edge + (utilityWidth + gap) * 2, y: utilityY, width: utilityWidth, height: utilityHeight },
+      skills: { x: edge + (utilityWidth + gap) * 3, y: utilityY, width: utilityWidth, height: utilityHeight },
+      audio: { x: edge + (utilityWidth + gap) * 4, y: utilityY, width: utilityWidth, height: utilityHeight }
+    };
+    const statsSummary = { x: edge, y: utilityY + utilityHeight + 5, width: this.width - edge * 2, height: 39 };
+    const actionHeight = this.clamp(this.height * 0.092, 56, 68);
+    const actionY = safeBottom - actionHeight - 10;
+    const actionInnerWidth = this.width - edge * 2 - gap * 2;
+    const chopWidth = Math.round(actionInnerWidth * 0.46);
+    const cultivateWidth = Math.round(actionInnerWidth * 0.24);
+    const actions = {
+      chop: { x: edge, y: actionY, width: chopWidth, height: actionHeight },
+      cultivate: { x: edge + chopWidth + gap, y: actionY, width: cultivateWidth, height: actionHeight },
+      challenge: { x: edge + chopWidth + gap * 2 + cultivateWidth, y: actionY, width: actionInnerWidth - chopWidth - cultivateWidth, height: actionHeight }
+    };
+    const treeInfo = { x: edge, y: actionY - 72, width: this.width - edge * 2, height: 30 };
+    const secondaryWidth = (this.width - edge * 2 - gap * 4) / 5;
+    const secondaryY = actionY - 37;
+    return {
+      safeTop,
+      safeBottom,
+      contentTop,
+      edge,
+      gap,
+      resource,
+      summary,
+      utilities,
+      statsSummary,
+      actions,
+      treeInfo,
+      signIn: { x: edge, y: secondaryY, width: secondaryWidth, height: 30 },
+      quickDraw: { x: edge + (secondaryWidth + gap), y: secondaryY, width: secondaryWidth, height: 30 },
+      shop: { x: edge + (secondaryWidth + gap) * 2, y: secondaryY, width: secondaryWidth, height: 30 },
+      pvp: { x: edge + (secondaryWidth + gap) * 3, y: secondaryY, width: secondaryWidth, height: 30 },
+      ranking: { x: edge + (secondaryWidth + gap) * 4, y: secondaryY, width: secondaryWidth, height: 30 },
+      playTop: statsSummary.y + statsSummary.height + 6,
+      playBottom: treeInfo.y - 5,
+      equipment: {
+        width: this.clamp(this.width * 0.145, 46, 59),
+        height: this.clamp(((treeInfo.y - 5) - (statsSummary.y + statsSummary.height + 6) - 14) / 3, 40, 49),
+        gap: this.clamp((((treeInfo.y - 5) - (statsSummary.y + statsSummary.height + 6)) - this.clamp(((treeInfo.y - 5) - (statsSummary.y + statsSummary.height + 6) - 14) / 3, 40, 49) * 3) / 2, 5, 12),
+        top: statsSummary.y + statsSummary.height + 6
+      },
+      tree: (() => {
+        const playTop = statsSummary.y + statsSummary.height + 6;
+        const playBottom = treeInfo.y - 5;
+        const treeHeight = this.clamp((playBottom - playTop) * 0.98, 205, 335);
+        const treeWidth = treeHeight * 620 / 731;
+        return {
+          x: this.width / 2 - treeWidth / 2,
+          y: playTop + (playBottom - playTop - treeHeight) / 2,
+          width: treeWidth,
+          height: treeHeight
+        };
+      })()
+    };
+  }
+
+  renderHome(profile, toast, treePulse = 0, elapsed = 0, audioEnabled = true, homeAction = 0) {
+    const ctx = this.ctx;
+    const stats = profile.getStats();
+    const realm = profile.getRealm();
+    const { summary, treeInfo, signIn, quickDraw, shop, pvp, ranking, actions } = this.layout;
+    this.drawBackground();
+    this.drawResourceBar(profile);
+
+    this.fillPanel(summary, "rgba(8, 24, 43, 0.84)", 9);
+    ctx.strokeStyle = "rgba(240, 211, 139, 0.36)";
+    ctx.strokeRect(summary.x + 2, summary.y + 2, summary.width - 4, summary.height - 4);
+    ctx.textAlign = "left";
+    ctx.fillStyle = "#f8dfa0";
+    ctx.font = "bold 15px sans-serif";
+    ctx.fillText(`${profile.character.name}的洞府`, summary.x + 9, summary.y + 18);
+    ctx.fillStyle = "#f5c451";
+    ctx.font = "bold 12px sans-serif";
+    ctx.fillText(`妖力 ${stats.power}`, summary.x + 9, summary.y + 35);
+    ctx.textAlign = "right";
+    ctx.fillStyle = "#d5e8ff";
+    ctx.fillText(`冒险 第 ${profile.stage} 关`, summary.x + summary.width - 9, summary.y + 18);
+    ctx.fillStyle = realm.color;
+    ctx.fillText(`境界 ${realm.name}`, summary.x + summary.width - 9, summary.y + 35);
+
+    this.drawUtilities(profile, audioEnabled);
+    this.drawStatsSummary(profile);
+    this.drawHomeAmbient(elapsed);
+    this.drawEquipment(profile);
+    this.drawTree(treePulse, elapsed);
+    this.drawHero(profile, elapsed, homeAction);
+    this.drawHeroTalkHint(elapsed);
+
+    ctx.fillStyle = "rgba(7, 22, 40, 0.8)";
+    ctx.fillRect(treeInfo.x, treeInfo.y, treeInfo.width, treeInfo.height);
+    ctx.textAlign = "center";
+    ctx.fillStyle = "#d8f5ff";
+    ctx.font = "12px sans-serif";
+    ctx.fillText(`灵树 ${profile.treeLevel} 级  ${profile.treeExp}/${profile.treeExpRequired}`, treeInfo.x + treeInfo.width / 2, treeInfo.y + 19);
+    this.drawMiniButton(signIn, "#4c9a74", profile.signInLastDate ? "今日签到" : "每日签到");
+    this.drawMiniButton(quickDraw, "#b07a35", "快速抽取");
+    this.drawMiniButton(shop, "#b54b68", "角色商店");
+    this.drawMiniButton(pvp, "#9a4c53", "PVP");
+    this.drawMiniButton(ranking, "#6a59a5", "仙榜");
+
+    this.drawButton(actions.chop, "#cf7f35", "砍树  仙桃 -1");
+    this.drawButton(actions.cultivate, "#6f5ca8", "吐纳");
+    this.drawButton(actions.challenge, "#3e7cb4", `挑战 ${profile.stage}`);
+    if (toast) this.drawToast(toast);
+  }
+
+  drawUtilities(profile, audioEnabled) {
+    const { explore, inventory, collection, skills, audio } = this.layout.utilities;
+    const progress = profile.getCollectionProgress();
+    this.drawMiniButton(explore, "#477c82", `游历 ${profile.exploreEnergy}/8`);
+    this.drawMiniButton(inventory, "#7e6ca8", `背包 ${profile.getInventory().length}`);
+    this.drawMiniButton(collection, "#6d6689", `图鉴 ${progress.found}/${progress.total}`);
+    this.drawSkillMiniButton(skills, profile.character.skill);
+    this.drawMiniButton(audio, audioEnabled ? "#947345" : "#5b6370", audioEnabled ? "声音 开" : "声音 关");
+  }
+
+  getModalLayout() {
+    const maxWidth = Math.min(348, this.width - 24);
+    const maxHeight = this.layout.safeBottom - this.layout.contentTop - 22;
+    const scale = Math.min(1, maxWidth / 348, maxHeight / 430);
+    const width = 348 * scale;
+    const height = 430 * scale;
+    const x = (this.width - width) / 2;
+    const y = this.layout.contentTop + (maxHeight - height) / 2;
+    const buttonY = y + height - 65 * scale;
+    const buttonGap = 8 * scale;
+    const buttonWidth = (width - 38 * scale - buttonGap * 2) / 3;
+    const buttonHeight = 45 * scale;
+    return {
+      x, y, width, height, scale,
+      headerHeight: 50 * scale,
+      close: { x: x + width - 44 * scale, y: y + 10 * scale, width: 28 * scale, height: 28 * scale },
+      sell: { x: x + 19 * scale, y: buttonY, width: buttonWidth, height: buttonHeight },
+      stash: { x: x + 19 * scale + buttonWidth + buttonGap, y: buttonY, width: buttonWidth, height: buttonHeight },
+      equip: { x: x + width - 19 * scale - buttonWidth, y: buttonY, width: buttonWidth, height: buttonHeight }
+    };
+  }
+
+  renderLoot(profile, item) {
+    this.renderHome(profile, "");
+    this.renderEquipmentPanel(profile, item, "灵树掉落装备", { sell: "分解", stash: "入包", equip: "穿戴" });
+  }
+
+  renderItemInspect(profile, item, source) {
+    const title = source === "inventory" ? "背包装备" : "抽取装备详情";
+    const labels = source === "inventory"
+      ? { sell: "出售", stash: "返回", equip: "装备" }
+      : { sell: "分解", stash: "入包", equip: "穿戴" };
+    this.renderEquipmentPanel(profile, item, title, labels);
+  }
+
+  renderEquipmentPanel(profile, item, title, labels) {
+    const ctx = this.ctx;
+    const comparison = profile.getEquipmentComparison(item);
+    const oldItem = comparison.current;
+    const modal = this.getModalLayout();
+    ctx.fillStyle = "rgba(0, 0, 0, 0.58)";
+    ctx.fillRect(0, 0, this.width, this.height);
+    ctx.fillStyle = "#f7edd7";
+    ctx.fillRect(modal.x, modal.y, modal.width, modal.height);
+    ctx.fillStyle = "#4b3827";
+    ctx.fillRect(modal.x, modal.y, modal.width, modal.headerHeight);
+    ctx.textAlign = "center";
+    ctx.fillStyle = "#ffe7a3";
+    ctx.font = `bold ${modal.scale < 0.9 ? 17 : 20}px sans-serif`;
+    ctx.fillText(title, this.width / 2, modal.y + 32 * modal.scale);
+    this.drawButton(modal.close, "#7f715f", "X");
+
+    ctx.fillStyle = item.color;
+    ctx.beginPath();
+    ctx.arc(this.width / 2, modal.y + 98 * modal.scale, 34 * modal.scale, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#ffffff";
+    ctx.font = `bold ${24 * modal.scale}px sans-serif`;
+    ctx.fillText(item.icon, this.width / 2, modal.y + 107 * modal.scale);
+    ctx.fillStyle = item.color;
+    ctx.font = `bold ${16 * modal.scale}px sans-serif`;
+    ctx.fillText(`${item.rarityName} · ${item.name}`, this.width / 2, modal.y + 156 * modal.scale);
+    ctx.fillStyle = "#5a4637";
+    ctx.font = `${13 * modal.scale}px sans-serif`;
+    ctx.fillText(`${item.slotName}装备`, this.width / 2, modal.y + 178 * modal.scale);
+    ctx.fillStyle = item.setColor;
+    ctx.font = `bold ${12 * modal.scale}px sans-serif`;
+    ctx.fillText(item.setName, this.width / 2, modal.y + 199 * modal.scale);
+    ctx.fillStyle = "#8b6d4b";
+    ctx.font = `bold ${11 * modal.scale}px sans-serif`;
+    ctx.fillText(oldItem ? `当前：${oldItem.rarityName} · ${oldItem.name}` : "当前：该部位尚未装备", this.width / 2, modal.y + 220 * modal.scale);
+    this.drawStatCompareLine("气血", oldItem ? oldItem.hp : 0, item.hp, modal.y + 242 * modal.scale, modal.scale);
+    this.drawStatCompareLine("攻击", oldItem ? oldItem.atk : 0, item.atk, modal.y + 263 * modal.scale, modal.scale);
+    this.drawStatCompareLine("速度", oldItem ? oldItem.spd : 0, item.spd, modal.y + 284 * modal.scale, modal.scale);
+    ctx.fillStyle = "#8d5f86";
+    ctx.font = `bold ${11 * modal.scale}px sans-serif`;
+    ctx.fillText(oldItem ? `词条：${oldItem.traitName} +${oldItem.traitValue}% → ${item.traitName} +${item.traitValue}%` : `词条：${item.traitName} +${item.traitValue}%`, this.width / 2, modal.y + 305 * modal.scale);
+    ctx.fillStyle = comparison.powerDelta >= 0 ? "#26894f" : "#bc4b45";
+    ctx.font = `bold ${12 * modal.scale}px sans-serif`;
+    ctx.fillText(`妖力：${comparison.currentPower} → ${item.power}  (${this.formatDelta(comparison.powerDelta)})`, this.width / 2, modal.y + 329 * modal.scale);
+    this.drawButton(modal.sell, "#9b6b3f", labels.sell);
+    this.drawButton(modal.stash, "#7f715f", labels.stash);
+    this.drawButton(modal.equip, "#3c9063", labels.equip);
+  }
+
+  getLootActionAt(x, y) {
+    const modal = this.getModalLayout();
+    if (this.contains(modal.close, x, y)) return "close";
+    if (this.contains(modal.sell, x, y)) return "sell";
+    if (this.contains(modal.stash, x, y)) return "stash";
+    if (this.contains(modal.equip, x, y)) return "equip";
+    return "";
+  }
+
+  getInspectActionAt(x, y, source) {
+    const action = this.getLootActionAt(x, y);
+    if (action === "close") return "close";
+    if (source === "inventory" && action === "stash") return "stash";
+    return action;
+  }
+
+  getQuickDrawItemIndexAt(x, y, resultCount) {
+    const cards = this.getQuickDrawLayout().resultCards.slice(0, Math.min(resultCount, 6));
+    return cards.findIndex((rect) => this.contains(rect, x, y));
+  }
+
+  renderInventory(profile, page = 0) {
+    this.renderHome(profile, "");
+    const ctx = this.ctx;
+    const modal = this.getInventoryLayout();
+    const items = profile.getInventory();
+    const totalPages = Math.max(1, Math.ceil(items.length / 6));
+    const pageIndex = Math.max(0, Math.min(totalPages - 1, page));
+    const view = items.slice(pageIndex * 6, pageIndex * 6 + 6);
+    this.drawModalShell(modal, "玩家背包");
+    ctx.fillStyle = "#765a42";
+    ctx.font = "12px sans-serif";
+    ctx.fillText(`已存放 ${items.length} 件装备`, this.width / 2, modal.y + 72);
+    if (!view.length) {
+      ctx.fillStyle = "#5b4939";
+      ctx.font = "bold 15px sans-serif";
+      ctx.fillText("背包还是空的", this.width / 2, modal.y + 180);
+    }
+    view.forEach((item, index) => {
+      const rect = modal.rows[index];
+      this.fillPanel(rect, item.rarity === "legend" ? "rgba(255, 210, 80, 0.18)" : "rgba(91, 73, 57, 0.08)", 7);
+      ctx.strokeStyle = item.color;
+      ctx.strokeRect(rect.x, rect.y, rect.width, rect.height);
+      ctx.textAlign = "left";
+      ctx.fillStyle = item.color;
+      ctx.font = "bold 15px sans-serif";
+      ctx.fillText(item.icon, rect.x + 12, rect.y + 24);
+      ctx.fillStyle = "#4b3827";
+      ctx.font = "bold 12px sans-serif";
+      ctx.fillText(item.name, rect.x + 40, rect.y + 18);
+      ctx.fillStyle = "#816d5d";
+      ctx.font = "10px sans-serif";
+      ctx.fillText(`${item.rarityName} · ${item.slotName} · 妖力 ${item.power}`, rect.x + 40, rect.y + 34);
+    });
+    ctx.textAlign = "center";
+    ctx.fillStyle = "#8b6d4b";
+    ctx.font = "12px sans-serif";
+    ctx.fillText(`${pageIndex + 1} / ${totalPages}`, this.width / 2, modal.y + modal.height - 91);
+    this.drawButton(modal.previous, "#7f715f", "上一页");
+    this.drawButton(modal.close, "#9b6b3f", "关闭");
+    this.drawButton(modal.next, "#477fa8", "下一页");
+  }
+
+  getInventoryLayout() {
+    const width = Math.min(356, this.width - 24);
+    const height = Math.min(458, this.layout.safeBottom - this.layout.contentTop - 22);
+    const x = (this.width - width) / 2;
+    const y = this.layout.contentTop + (this.layout.safeBottom - this.layout.contentTop - height) / 2;
+    const rowGap = 8;
+    const rowHeight = 46;
+    const buttonGap = 8;
+    const buttonWidth = (width - 40 - buttonGap * 2) / 3;
+    const buttonY = y + height - 67;
+    return {
+      x, y, width, height,
+      headerHeight: 50,
+      rows: Array.from({ length: 6 }, (_, index) => ({
+        x: x + 16,
+        y: y + 92 + index * (rowHeight + rowGap),
+        width: width - 32,
+        height: rowHeight
+      })),
+      previous: { x: x + 12, y: buttonY, width: buttonWidth, height: 45 },
+      close: { x: x + 12 + buttonWidth + buttonGap, y: buttonY, width: buttonWidth, height: 45 },
+      next: { x: x + 12 + (buttonWidth + buttonGap) * 2, y: buttonY, width: buttonWidth, height: 45 }
+    };
+  }
+
+  getInventoryItemIndexAt(x, y, profile, page = 0) {
+    const items = profile.getInventory().slice(page * 6, page * 6 + 6);
+    return this.getInventoryLayout().rows.slice(0, items.length).findIndex((rect) => this.contains(rect, x, y));
+  }
+
+  isInventoryPrevButton(x, y) {
+    return this.contains(this.getInventoryLayout().previous, x, y);
+  }
+
+  isInventoryNextButton(x, y) {
+    return this.contains(this.getInventoryLayout().next, x, y);
+  }
+
+  isInventoryCloseButton(x, y) {
+    return this.contains(this.getInventoryLayout().close, x, y);
+  }
+
+  renderSignIn(profile, rewards, todayKey) {
+    this.renderHome(profile, "");
+    const ctx = this.ctx;
+    const modal = this.getSignInLayout();
+    this.drawModalShell(modal, "30日签到");
+    ctx.fillStyle = "#765a42";
+    ctx.font = "12px sans-serif";
+    ctx.fillText(`今日 ${todayKey} · 已签到 ${profile.signInClaimedDays}/${rewards.length}`, this.width / 2, modal.y + 72);
+    rewards.forEach((reward, index) => {
+      const rect = modal.cells[index];
+      const claimed = index < profile.signInClaimedDays;
+      const current = index === profile.signInClaimedDays;
+      this.fillPanel(rect, claimed ? "rgba(60, 144, 99, 0.22)" : current ? "rgba(255, 210, 80, 0.2)" : "rgba(91, 73, 57, 0.08)", 6);
+      ctx.strokeStyle = claimed ? "#3c9063" : current ? "#d29a38" : "rgba(118, 90, 66, 0.24)";
+      ctx.strokeRect(rect.x, rect.y, rect.width, rect.height);
+      ctx.textAlign = "center";
+      ctx.fillStyle = claimed ? "#317d54" : "#5b4939";
+      ctx.font = "bold 11px sans-serif";
+      ctx.fillText(`第${reward.day}天`, rect.x + rect.width / 2, rect.y + 16);
+      ctx.font = "10px sans-serif";
+      this.drawWrappedText(reward.label, rect.x + 6, rect.y + 30, rect.width - 12, 11);
+    });
+    this.drawButton(modal.claim, profile.signInClaimedDays >= rewards.length || profile.signInLastDate === todayKey ? "#6f6a61" : "#3c9063", profile.signInClaimedDays >= rewards.length ? "已领完" : profile.signInLastDate === todayKey ? "今日已签" : "领取今日奖励");
+    this.drawButton(modal.close, "#7f715f", "关闭");
+  }
+
+  getSignInLayout() {
+    const width = Math.min(356, this.width - 24);
+    const height = Math.min(520, this.layout.safeBottom - this.layout.contentTop - 18);
+    const x = (this.width - width) / 2;
+    const y = this.layout.contentTop + (this.layout.safeBottom - this.layout.contentTop - height) / 2;
+    const cellGap = 6;
+    const cellWidth = (width - 44 - cellGap * 4) / 5;
+    const cellHeight = 42;
+    return {
+      x, y, width, height,
+      headerHeight: 50,
+      cells: Array.from({ length: 30 }, (_, index) => ({
+        x: x + 16 + (index % 5) * (cellWidth + cellGap),
+        y: y + 92 + Math.floor(index / 5) * (cellHeight + cellGap),
+        width: cellWidth,
+        height: cellHeight
+      })),
+      claim: { x: x + 20, y: y + height - 64, width: width - 120, height: 43 },
+      close: { x: x + width - 88, y: y + height - 64, width: 68, height: 43 }
+    };
+  }
+
+  isSignInClaimButton(x, y) {
+    return this.contains(this.getSignInLayout().claim, x, y);
+  }
+
+  isSignInCloseButton(x, y) {
+    return this.contains(this.getSignInLayout().close, x, y);
+  }
+
+  isInventoryButton(x, y) {
+    return this.contains(this.layout.utilities.inventory, x, y);
+  }
+
+  isSignInButton(x, y) {
+    return this.contains(this.layout.signIn, x, y);
   }
 }
 

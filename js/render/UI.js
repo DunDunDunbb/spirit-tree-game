@@ -37,6 +37,8 @@ class UI {
     this.safeArea = options.safeArea || { top: 0, bottom: height };
     this.menuButton = options.menuButton || null;
     this.layout = this.createLayout();
+    this.shopPage = 0;
+    this.lastShopTotal = 0;
   }
 
   clamp(value, min, max) {
@@ -379,7 +381,18 @@ class UI {
       "hero-skin-royal": { style: "spear", color: "#ffe6a3", accent: "#ffbd45", homeX: 0.71, homeY: 0.61, battleX: 0.7, battleY: 0.63, homeAngle: -0.42, battleAngle: -0.5, scale: 1.12 },
       "hero-skin-bunny": { style: "bow", color: "#eecbff", accent: "#ffeb8a", homeX: 0.69, homeY: 0.58, battleX: 0.68, battleY: 0.61, homeAngle: -0.48, battleAngle: -0.58, scale: 0.98 },
       "hero-skin-nurse": { style: "staff", color: "#fff4f6", accent: "#ff8fa3", homeX: 0.68, homeY: 0.6, battleX: 0.68, battleY: 0.62, homeAngle: -0.38, battleAngle: -0.48, scale: 0.95 },
-      "hero-skin-bocchi-shirt": { style: "guitar", color: "#ff9bc3", accent: "#ffe17a", homeX: 0.68, homeY: 0.62, battleX: 0.67, battleY: 0.64, homeAngle: -0.58, battleAngle: -0.66, scale: 0.92 }
+      "hero-skin-bocchi-shirt": { style: "guitar", color: "#ff9bc3", accent: "#ffe17a", homeX: 0.68, homeY: 0.62, battleX: 0.67, battleY: 0.64, homeAngle: -0.58, battleAngle: -0.66, scale: 0.92 },
+      "hero-skin-samurai": { style: "katana", color: "#f9d39b", accent: "#d64b43", homeX: 0.72, homeY: 0.58, battleX: 0.7, battleY: 0.61, homeAngle: -0.84, battleAngle: -0.9, scale: 1.04 },
+      "hero-skin-cyberpunk": { style: "laser", color: "#dbfbff", accent: "#1ce3ff", homeX: 0.71, homeY: 0.59, battleX: 0.69, battleY: 0.61, homeAngle: -0.72, battleAngle: -0.82, scale: 1 },
+      "hero-skin-frost-king": { style: "ice-staff", color: "#e9f8ff", accent: "#9fe7ff", homeX: 0.69, homeY: 0.58, battleX: 0.69, battleY: 0.61, homeAngle: -0.44, battleAngle: -0.54, scale: 1.02 },
+      "hero-skin-magma-warlord": { style: "lava-axe", color: "#ffd0a8", accent: "#ff7a3c", homeX: 0.73, homeY: 0.6, battleX: 0.71, battleY: 0.63, homeAngle: -0.58, battleAngle: -0.66, scale: 1.08 },
+      "hero-skin-jade-monk": { style: "jade-staff", color: "#d9ffe9", accent: "#55d69c", homeX: 0.69, homeY: 0.59, battleX: 0.68, battleY: 0.61, homeAngle: -0.4, battleAngle: -0.48, scale: 0.98 },
+      "hero-skin-desert-pharaoh": { style: "scepter", color: "#f8e2aa", accent: "#d8b15b", homeX: 0.7, homeY: 0.59, battleX: 0.69, battleY: 0.62, homeAngle: -0.38, battleAngle: -0.46, scale: 1.04 },
+      "hero-skin-jungle-guardian": { style: "vine-bow", color: "#def6c9", accent: "#6fc56f", homeX: 0.69, homeY: 0.58, battleX: 0.68, battleY: 0.61, homeAngle: -0.52, battleAngle: -0.6, scale: 1 },
+      "hero-skin-steampunk": { style: "hammer", color: "#f9d9b2", accent: "#c48d57", homeX: 0.72, homeY: 0.6, battleX: 0.7, battleY: 0.62, homeAngle: -0.63, battleAngle: -0.72, scale: 0.98 },
+      "hero-skin-star-priest": { style: "star-orb", color: "#f1ebff", accent: "#b6a7ff", homeX: 0.68, homeY: 0.59, battleX: 0.68, battleY: 0.62, homeAngle: -0.34, battleAngle: -0.44, scale: 1 },
+      "hero-skin-sakura-festival": { style: "fan", color: "#ffe5ef", accent: "#ff8fb4", homeX: 0.7, homeY: 0.58, battleX: 0.69, battleY: 0.61, homeAngle: -0.48, battleAngle: -0.56, scale: 0.96 },
+      "hero-skin-deep-sea-captain": { style: "trident", color: "#dffcff", accent: "#3fc9d8", homeX: 0.72, homeY: 0.61, battleX: 0.7, battleY: 0.63, homeAngle: -0.5, battleAngle: -0.58, scale: 1.12 }
     };
     const base = presets[sprite] || presets["hero-main-character"];
     return {
@@ -412,10 +425,10 @@ class UI {
     if (options.flip) ctx.scale(-1, 1);
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
-    ctx.shadowColor = weapon.rarity === "legend" ? color : "rgba(0,0,0,0.35)";
-    ctx.shadowBlur = weapon.rarity === "legend" ? 16 : 4;
+    ctx.shadowColor = "rgba(0,0,0,0.35)";
+    ctx.shadowBlur = 4;
 
-    if (style === "staff") {
+    if (style === "staff" || style === "ice-staff" || style === "jade-staff" || style === "scepter" || style === "star-orb") {
       ctx.strokeStyle = "#6a432b";
       ctx.lineWidth = 7;
       ctx.beginPath();
@@ -430,7 +443,28 @@ class UI {
       ctx.stroke();
       ctx.fillStyle = color;
       ctx.beginPath();
-      ctx.arc(0, -length - 8, 9, 0, Math.PI * 2);
+      if (style === "ice-staff") {
+        ctx.moveTo(0, -length - 20);
+        ctx.lineTo(11, -length - 6);
+        ctx.lineTo(0, -length + 8);
+        ctx.lineTo(-11, -length - 6);
+        ctx.closePath();
+      } else if (style === "scepter") {
+        ctx.arc(0, -length - 9, 10, 0, Math.PI * 2);
+        ctx.moveTo(-12, -length - 2);
+        ctx.lineTo(12, -length - 2);
+      } else if (style === "star-orb") {
+        for (let i = 0; i < 5; i += 1) {
+          const a = -Math.PI / 2 + i * Math.PI * 2 / 5;
+          const r = i === 0 ? 13 : 13;
+          ctx.lineTo(Math.cos(a) * r, -length - 8 + Math.sin(a) * r);
+          const b = a + Math.PI / 5;
+          ctx.lineTo(Math.cos(b) * 6, -length - 8 + Math.sin(b) * 6);
+        }
+        ctx.closePath();
+      } else {
+        ctx.arc(0, -length - 8, 9, 0, Math.PI * 2);
+      }
       ctx.fill();
       ctx.strokeStyle = "#fff4bc";
       ctx.lineWidth = 2;
@@ -443,7 +477,7 @@ class UI {
       ctx.moveTo(0, -length - 15);
       ctx.lineTo(0, -length - 1);
       ctx.stroke();
-    } else if (style === "bow") {
+    } else if (style === "bow" || style === "vine-bow") {
       ctx.strokeStyle = color;
       ctx.lineWidth = 5;
       ctx.beginPath();
@@ -462,7 +496,15 @@ class UI {
       ctx.lineTo(length * 0.31, -length * 0.31);
       ctx.lineTo(length * 0.22, -length * 0.38);
       ctx.stroke();
-    } else if (style === "spear") {
+      if (style === "vine-bow") {
+        ctx.strokeStyle = accent;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(-length * 0.08, -length * 0.55, 5, 0, Math.PI * 1.7);
+        ctx.arc(length * 0.11, -length * 0.18, 4, Math.PI, Math.PI * 2.5);
+        ctx.stroke();
+      }
+    } else if (style === "spear" || style === "trident") {
       ctx.strokeStyle = "#6a432b";
       ctx.lineWidth = 6;
       ctx.beginPath();
@@ -477,6 +519,16 @@ class UI {
       ctx.lineTo(-10, -length * 1.02);
       ctx.closePath();
       ctx.fill();
+      if (style === "trident") {
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 5;
+        ctx.beginPath();
+        ctx.moveTo(-14, -length * 1.11);
+        ctx.lineTo(-10, -length * 0.92);
+        ctx.moveTo(14, -length * 1.11);
+        ctx.lineTo(10, -length * 0.92);
+        ctx.stroke();
+      }
       ctx.strokeStyle = accent;
       ctx.lineWidth = 3;
       ctx.beginPath();
@@ -506,8 +558,54 @@ class UI {
       ctx.moveTo(-10, -length * 0.58);
       ctx.lineTo(10, -length * 0.58);
       ctx.stroke();
+    } else if (style === "lava-axe" || style === "hammer") {
+      ctx.strokeStyle = "#6a432b";
+      ctx.lineWidth = 7;
+      ctx.beginPath();
+      ctx.moveTo(0, grip + 9);
+      ctx.lineTo(0, -length * 0.9);
+      ctx.stroke();
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      if (style === "lava-axe") {
+        ctx.moveTo(-6, -length * 0.88);
+        ctx.quadraticCurveTo(-34, -length * 0.74, -18, -length * 0.52);
+        ctx.lineTo(0, -length * 0.63);
+        ctx.lineTo(18, -length * 0.52);
+        ctx.quadraticCurveTo(34, -length * 0.74, 6, -length * 0.88);
+      } else {
+        ctx.moveTo(-16, -length * 0.92);
+        ctx.lineTo(16, -length * 0.92);
+        ctx.quadraticCurveTo(22, -length * 0.92, 22, -length * 0.86);
+        ctx.lineTo(22, -length * 0.78);
+        ctx.quadraticCurveTo(22, -length * 0.72, 16, -length * 0.72);
+        ctx.lineTo(-16, -length * 0.72);
+        ctx.quadraticCurveTo(-22, -length * 0.72, -22, -length * 0.78);
+        ctx.lineTo(-22, -length * 0.86);
+        ctx.quadraticCurveTo(-22, -length * 0.92, -16, -length * 0.92);
+      }
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = accent;
+      ctx.lineWidth = 3;
+      ctx.stroke();
+    } else if (style === "fan") {
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.moveTo(0, grip);
+      ctx.arc(0, -length * 0.12, length * 0.38, -Math.PI * 0.92, -Math.PI * 0.08);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = accent;
+      ctx.lineWidth = 2;
+      for (let i = -2; i <= 2; i += 1) {
+        ctx.beginPath();
+        ctx.moveTo(0, grip);
+        ctx.lineTo(i * length * 0.12, -length * 0.42 + Math.abs(i) * 3);
+        ctx.stroke();
+      }
     } else {
-      const bladeWidth = style === "blade" ? 13 : 8;
+      const bladeWidth = style === "blade" || style === "laser" ? 13 : style === "katana" ? 6 : 8;
       ctx.strokeStyle = "#6a432b";
       ctx.lineWidth = 7;
       ctx.beginPath();
@@ -520,12 +618,12 @@ class UI {
       ctx.moveTo(-13, -grip);
       ctx.lineTo(13, -grip);
       ctx.stroke();
-      ctx.fillStyle = color;
+      ctx.fillStyle = style === "laser" ? accent : color;
       ctx.beginPath();
       ctx.moveTo(0, -length);
-      ctx.lineTo(bladeWidth, -grip - 2);
+      ctx.lineTo(bladeWidth, -grip - (style === "katana" ? 8 : 2));
       ctx.lineTo(0, -grip - 12);
-      ctx.lineTo(-bladeWidth, -grip - 2);
+      ctx.lineTo(-bladeWidth, -grip - (style === "katana" ? 8 : 2));
       ctx.closePath();
       ctx.fill();
       ctx.strokeStyle = "rgba(255,255,255,0.78)";
@@ -662,9 +760,6 @@ class UI {
       this.fillPanel({ x, y, width: layout.width, height: layout.height }, "rgba(8, 22, 39, 0.82)", 7);
       ctx.strokeStyle = entry.item ? entry.item.color : "rgba(196, 221, 240, 0.36)";
       ctx.strokeRect(x, y, layout.width, layout.height);
-      if (entry.item && entry.item.rarity === "legend") {
-        this.drawLegendAura(x + layout.width / 2, y + 18, 12, Date.now() / 1000 + index);
-      }
       ctx.textAlign = "center";
       ctx.fillStyle = entry.item ? entry.item.color : "#a7b7c5";
       ctx.font = "bold 15px sans-serif";
@@ -693,9 +788,6 @@ class UI {
     ctx.fillText("灵树掉落装备", this.width / 2, modal.y + 32 * modal.scale);
 
     ctx.fillStyle = item.color;
-    if (item.rarity === "legend") {
-      this.drawLegendAura(this.width / 2, modal.y + 98 * modal.scale, 44 * modal.scale, Date.now() / 1000);
-    }
     ctx.beginPath();
     ctx.arc(this.width / 2, modal.y + 98 * modal.scale, 34 * modal.scale, 0, Math.PI * 2);
     ctx.fill();
@@ -725,34 +817,6 @@ class UI {
     ctx.fillText(`妖力：${comparison.currentPower} → ${item.power}  (${this.formatDelta(comparison.powerDelta)})`, this.width / 2, modal.y + 329 * modal.scale);
     this.drawButton(modal.sell, "#9b6b3f", `分解 +${item.price}`);
     this.drawButton(modal.equip, "#3c9063", "穿戴");  }
-
-  drawLegendAura(x, y, radius, elapsed = 0) {
-    const ctx = this.ctx;
-    ctx.save();
-    ctx.globalAlpha = 0.88;
-    ctx.strokeStyle = "#ffd86b";
-    ctx.shadowColor = "#ffbd3d";
-    ctx.shadowBlur = 24;
-    ctx.lineWidth = 5;
-    ctx.beginPath();
-    ctx.arc(x, y, radius + Math.sin(elapsed * 4) * 4, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.globalAlpha = 0.46;
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.arc(x, y, radius + 8 + Math.sin(elapsed * 5) * 3, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.globalAlpha = 0.85;
-    for (let index = 0; index < 8; index += 1) {
-      const angle = elapsed * 1.8 + index * Math.PI / 4;
-      const distance = radius + 11 + Math.sin(elapsed * 3 + index) * 4;
-      ctx.fillStyle = index % 2 ? "#fff2a8" : "#ffbd3d";
-      ctx.beginPath();
-      ctx.arc(x + Math.cos(angle) * distance, y + Math.sin(angle) * distance, 2.5, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    ctx.restore();
-  }
 
   drawAvatar(entry, x, y, size = 28) {
     const ctx = this.ctx;
@@ -1068,7 +1132,7 @@ class UI {
       });
       ctx.fillStyle = "#8b6d4b";
       ctx.font = "12px sans-serif";
-      ctx.fillText("金色神品装备会出现特殊光效", this.width / 2, modal.y + 284);
+      ctx.fillText("金色神品装备会自动进入背包保留", this.width / 2, modal.y + 284);
       this.drawButton(modal.close, "#7f715f", "关闭");
       return;
     }
@@ -1088,9 +1152,6 @@ class UI {
       this.fillPanel(rect, item.rarity === "legend" ? "rgba(255, 210, 80, 0.18)" : "rgba(91, 73, 57, 0.08)", 7);
       ctx.strokeStyle = item.color;
       ctx.strokeRect(rect.x, rect.y, rect.width, rect.height);
-      if (item.rarity === "legend") {
-        this.drawLegendAura(rect.x + 20, rect.y + rect.height / 2, 14, elapsed + index);
-      }
       ctx.textAlign = "left";
       ctx.fillStyle = item.color;
       ctx.font = "bold 14px sans-serif";
@@ -1149,6 +1210,12 @@ class UI {
     const ctx = this.ctx;
     const modal = this.getShopLayout();
     const cosmetics = profile.getCosmetics();
+    this.lastShopTotal = cosmetics.length;
+    const pageSize = modal.cosmeticRows.length;
+    const pageCount = Math.max(1, Math.ceil(cosmetics.length / pageSize));
+    this.shopPage = this.clamp(this.shopPage || 0, 0, pageCount - 1);
+    const pageStart = this.shopPage * pageSize;
+    const visibleCosmetics = cosmetics.slice(pageStart, pageStart + pageSize);
     ctx.fillStyle = "rgba(0, 0, 0, 0.64)";
     ctx.fillRect(0, 0, this.width, this.height);
     ctx.fillStyle = "#f7edd7";
@@ -1163,7 +1230,7 @@ class UI {
     ctx.font = "12px sans-serif";
     ctx.fillText(`当前灵石 ${profile.coins} · 皮肤自带属性加成`, this.width / 2, modal.y + 72);
 
-    cosmetics.forEach((item, index) => {
+    visibleCosmetics.forEach((item, index) => {
       const rect = modal.cosmeticRows[index];
       this.fillPanel(rect, item.equipped ? "rgba(60, 144, 99, 0.22)" : "rgba(91, 73, 57, 0.08)", 7);
       ctx.strokeStyle = item.equipped ? "#3c9063" : "rgba(118, 90, 66, 0.24)";
@@ -1187,7 +1254,10 @@ class UI {
     ctx.textAlign = "center";
     ctx.fillStyle = "#765a42";
     ctx.font = "11px sans-serif";
-    ctx.fillText(shopMessage || "所有皮肤只能通过灵石直接购买", this.width / 2, modal.close.y - 13);
+    ctx.fillText(shopMessage || "所有皮肤只能通过灵石直接购买", this.width / 2, modal.prev.y - 10);
+    ctx.fillText(`第 ${this.shopPage + 1} / ${pageCount} 页`, this.width / 2, modal.close.y - 12);
+    this.drawButton(modal.prev, this.shopPage > 0 ? "#8b6d4b" : "#c5bba7", "上一页");
+    this.drawButton(modal.next, this.shopPage < pageCount - 1 ? "#8b6d4b" : "#c5bba7", "下一页");
     this.drawButton(modal.close, "#7f715f", "关闭");
   }
 
@@ -1210,6 +1280,8 @@ class UI {
         width: rowWidth,
         height: rowHeight
       })),
+      prev: { x: x + 18, y: y + height - 106, width: (width - 48) / 2, height: 35 },
+      next: { x: x + 30 + (width - 48) / 2, y: y + height - 106, width: (width - 48) / 2, height: 35 },
       close: { x: x + 18, y: y + height - 61, width: width - 36, height: 43 }
     };
   }
@@ -2214,7 +2286,21 @@ class UI {
   }
 
   getCosmeticIndexAt(x, y) {
-    return this.getShopLayout().cosmeticRows.findIndex((rect) => this.contains(rect, x, y));
+    const layout = this.getShopLayout();
+    const pageSize = layout.cosmeticRows.length;
+    const pageCount = Math.max(1, Math.ceil((this.lastShopTotal || pageSize) / pageSize));
+    if (this.contains(layout.prev, x, y)) {
+      this.shopPage = this.clamp((this.shopPage || 0) - 1, 0, pageCount - 1);
+      return -1;
+    }
+    if (this.contains(layout.next, x, y)) {
+      this.shopPage = this.clamp((this.shopPage || 0) + 1, 0, pageCount - 1);
+      return -1;
+    }
+    const rowIndex = layout.cosmeticRows.findIndex((rect) => this.contains(rect, x, y));
+    if (rowIndex < 0) return -1;
+    const itemIndex = (this.shopPage || 0) * pageSize + rowIndex;
+    return itemIndex < (this.lastShopTotal || 0) ? itemIndex : -1;
   }
 
   isShopCloseButton(x, y) {
@@ -2265,6 +2351,393 @@ class UI {
 
   isContinueButton(x, y) {
     return this.contains(this.getResultLayout().continueButton, x, y);
+  }
+
+  createLayout() {
+    const safeTop = Math.max(0, this.safeArea.top || 0);
+    const safeBottom = Math.min(this.height, this.safeArea.bottom || this.height);
+    const menuBottom = this.menuButton ? this.menuButton.bottom : safeTop;
+    const contentTop = Math.max(safeTop + 5, menuBottom + 5);
+    const edge = this.clamp(this.width * 0.026, 8, 13);
+    const gap = this.clamp(this.width * 0.018, 5, 8);
+    const resource = { x: 0, y: contentTop, width: this.width, height: 36 };
+    const summary = { x: edge, y: resource.y + resource.height + 5, width: this.width - edge * 2, height: 42 };
+    const utilityY = summary.y + summary.height + 5;
+    const utilityHeight = 30;
+    const utilityWidth = (this.width - edge * 2 - gap * 4) / 5;
+    const utilities = {
+      explore: { x: edge, y: utilityY, width: utilityWidth, height: utilityHeight },
+      inventory: { x: edge + (utilityWidth + gap), y: utilityY, width: utilityWidth, height: utilityHeight },
+      collection: { x: edge + (utilityWidth + gap) * 2, y: utilityY, width: utilityWidth, height: utilityHeight },
+      skills: { x: edge + (utilityWidth + gap) * 3, y: utilityY, width: utilityWidth, height: utilityHeight },
+      audio: { x: edge + (utilityWidth + gap) * 4, y: utilityY, width: utilityWidth, height: utilityHeight }
+    };
+    const statsSummary = { x: edge, y: utilityY + utilityHeight + 5, width: this.width - edge * 2, height: 39 };
+    const actionHeight = this.clamp(this.height * 0.092, 56, 68);
+    const actionY = safeBottom - actionHeight - 10;
+    const actionInnerWidth = this.width - edge * 2 - gap * 2;
+    const chopWidth = Math.round(actionInnerWidth * 0.46);
+    const cultivateWidth = Math.round(actionInnerWidth * 0.24);
+    const actions = {
+      chop: { x: edge, y: actionY, width: chopWidth, height: actionHeight },
+      cultivate: { x: edge + chopWidth + gap, y: actionY, width: cultivateWidth, height: actionHeight },
+      challenge: { x: edge + chopWidth + gap * 2 + cultivateWidth, y: actionY, width: actionInnerWidth - chopWidth - cultivateWidth, height: actionHeight }
+    };
+    const treeInfo = { x: edge, y: actionY - 72, width: this.width - edge * 2, height: 30 };
+    const secondaryWidth = (this.width - edge * 2 - gap * 4) / 5;
+    const secondaryY = actionY - 37;
+    return {
+      safeTop,
+      safeBottom,
+      contentTop,
+      edge,
+      gap,
+      resource,
+      summary,
+      utilities,
+      statsSummary,
+      actions,
+      treeInfo,
+      signIn: { x: edge, y: secondaryY, width: secondaryWidth, height: 30 },
+      quickDraw: { x: edge + (secondaryWidth + gap), y: secondaryY, width: secondaryWidth, height: 30 },
+      shop: { x: edge + (secondaryWidth + gap) * 2, y: secondaryY, width: secondaryWidth, height: 30 },
+      pvp: { x: edge + (secondaryWidth + gap) * 3, y: secondaryY, width: secondaryWidth, height: 30 },
+      ranking: { x: edge + (secondaryWidth + gap) * 4, y: secondaryY, width: secondaryWidth, height: 30 },
+      playTop: statsSummary.y + statsSummary.height + 6,
+      playBottom: treeInfo.y - 5,
+      equipment: {
+        width: this.clamp(this.width * 0.145, 46, 59),
+        height: this.clamp(((treeInfo.y - 5) - (statsSummary.y + statsSummary.height + 6) - 14) / 3, 40, 49),
+        gap: this.clamp((((treeInfo.y - 5) - (statsSummary.y + statsSummary.height + 6)) - this.clamp(((treeInfo.y - 5) - (statsSummary.y + statsSummary.height + 6) - 14) / 3, 40, 49) * 3) / 2, 5, 12),
+        top: statsSummary.y + statsSummary.height + 6
+      },
+      tree: (() => {
+        const playTop = statsSummary.y + statsSummary.height + 6;
+        const playBottom = treeInfo.y - 5;
+        const treeHeight = this.clamp((playBottom - playTop) * 0.98, 205, 335);
+        const treeWidth = treeHeight * 620 / 731;
+        return {
+          x: this.width / 2 - treeWidth / 2,
+          y: playTop + (playBottom - playTop - treeHeight) / 2,
+          width: treeWidth,
+          height: treeHeight
+        };
+      })()
+    };
+  }
+
+  renderHome(profile, toast, treePulse = 0, elapsed = 0, audioEnabled = true, homeAction = 0) {
+    const ctx = this.ctx;
+    const stats = profile.getStats();
+    const realm = profile.getRealm();
+    const { summary, treeInfo, signIn, quickDraw, shop, pvp, ranking, actions } = this.layout;
+    this.drawBackground();
+    this.drawResourceBar(profile);
+
+    this.fillPanel(summary, "rgba(8, 24, 43, 0.84)", 9);
+    ctx.strokeStyle = "rgba(240, 211, 139, 0.36)";
+    ctx.strokeRect(summary.x + 2, summary.y + 2, summary.width - 4, summary.height - 4);
+    ctx.textAlign = "left";
+    ctx.fillStyle = "#f8dfa0";
+    ctx.font = "bold 15px sans-serif";
+    ctx.fillText(`${profile.character.name}的洞府`, summary.x + 9, summary.y + 18);
+    ctx.fillStyle = "#f5c451";
+    ctx.font = "bold 12px sans-serif";
+    ctx.fillText(`妖力 ${stats.power}`, summary.x + 9, summary.y + 35);
+    ctx.textAlign = "right";
+    ctx.fillStyle = "#d5e8ff";
+    ctx.fillText(`冒险 第 ${profile.stage} 关`, summary.x + summary.width - 9, summary.y + 18);
+    ctx.fillStyle = realm.color;
+    ctx.fillText(`境界 ${realm.name}`, summary.x + summary.width - 9, summary.y + 35);
+
+    this.drawUtilities(profile, audioEnabled);
+    this.drawStatsSummary(profile);
+    this.drawHomeAmbient(elapsed);
+    this.drawEquipment(profile);
+    this.drawTree(treePulse, elapsed);
+    this.drawHero(profile, elapsed, homeAction);
+    this.drawHeroTalkHint(elapsed);
+
+    ctx.fillStyle = "rgba(7, 22, 40, 0.8)";
+    ctx.fillRect(treeInfo.x, treeInfo.y, treeInfo.width, treeInfo.height);
+    ctx.textAlign = "center";
+    ctx.fillStyle = "#d8f5ff";
+    ctx.font = "12px sans-serif";
+    ctx.fillText(`灵树 ${profile.treeLevel} 级  ${profile.treeExp}/${profile.treeExpRequired}`, treeInfo.x + treeInfo.width / 2, treeInfo.y + 19);
+    this.drawMiniButton(signIn, "#4c9a74", profile.signInLastDate ? "今日签到" : "每日签到");
+    this.drawMiniButton(quickDraw, "#b07a35", "快速抽取");
+    this.drawMiniButton(shop, "#b54b68", "角色商店");
+    this.drawMiniButton(pvp, "#9a4c53", "PVP");
+    this.drawMiniButton(ranking, "#6a59a5", "仙榜");
+
+    this.drawButton(actions.chop, "#cf7f35", "砍树  仙桃 -1");
+    this.drawButton(actions.cultivate, "#6f5ca8", "吐纳");
+    this.drawButton(actions.challenge, "#3e7cb4", `挑战 ${profile.stage}`);
+    if (toast) this.drawToast(toast);
+  }
+
+  drawUtilities(profile, audioEnabled) {
+    const { explore, inventory, collection, skills, audio } = this.layout.utilities;
+    const progress = profile.getCollectionProgress();
+    this.drawMiniButton(explore, "#477c82", `游历 ${profile.exploreEnergy}/8`);
+    this.drawMiniButton(inventory, "#7e6ca8", `背包 ${profile.getInventory().length}`);
+    this.drawMiniButton(collection, "#6d6689", `图鉴 ${progress.found}/${progress.total}`);
+    this.drawSkillMiniButton(skills, profile.character.skill);
+    this.drawMiniButton(audio, audioEnabled ? "#947345" : "#5b6370", audioEnabled ? "声音 开" : "声音 关");
+  }
+
+  getModalLayout() {
+    const maxWidth = Math.min(348, this.width - 24);
+    const maxHeight = this.layout.safeBottom - this.layout.contentTop - 22;
+    const scale = Math.min(1, maxWidth / 348, maxHeight / 430);
+    const width = 348 * scale;
+    const height = 430 * scale;
+    const x = (this.width - width) / 2;
+    const y = this.layout.contentTop + (maxHeight - height) / 2;
+    const buttonY = y + height - 65 * scale;
+    const buttonGap = 8 * scale;
+    const buttonWidth = (width - 38 * scale - buttonGap * 2) / 3;
+    const buttonHeight = 45 * scale;
+    return {
+      x, y, width, height, scale,
+      headerHeight: 50 * scale,
+      close: { x: x + width - 44 * scale, y: y + 10 * scale, width: 28 * scale, height: 28 * scale },
+      sell: { x: x + 19 * scale, y: buttonY, width: buttonWidth, height: buttonHeight },
+      stash: { x: x + 19 * scale + buttonWidth + buttonGap, y: buttonY, width: buttonWidth, height: buttonHeight },
+      equip: { x: x + width - 19 * scale - buttonWidth, y: buttonY, width: buttonWidth, height: buttonHeight }
+    };
+  }
+
+  renderLoot(profile, item) {
+    this.renderHome(profile, "");
+    this.renderEquipmentPanel(profile, item, "灵树掉落装备", { sell: "分解", stash: "入包", equip: "穿戴" });
+  }
+
+  renderItemInspect(profile, item, source) {
+    const title = source === "inventory" ? "背包装备" : "抽取装备详情";
+    const labels = source === "inventory"
+      ? { sell: "出售", stash: "返回", equip: "装备" }
+      : { sell: "分解", stash: "入包", equip: "穿戴" };
+    this.renderEquipmentPanel(profile, item, title, labels);
+  }
+
+  renderEquipmentPanel(profile, item, title, labels) {
+    const ctx = this.ctx;
+    const comparison = profile.getEquipmentComparison(item);
+    const oldItem = comparison.current;
+    const modal = this.getModalLayout();
+    ctx.fillStyle = "rgba(0, 0, 0, 0.58)";
+    ctx.fillRect(0, 0, this.width, this.height);
+    ctx.fillStyle = "#f7edd7";
+    ctx.fillRect(modal.x, modal.y, modal.width, modal.height);
+    ctx.fillStyle = "#4b3827";
+    ctx.fillRect(modal.x, modal.y, modal.width, modal.headerHeight);
+    ctx.textAlign = "center";
+    ctx.fillStyle = "#ffe7a3";
+    ctx.font = `bold ${modal.scale < 0.9 ? 17 : 20}px sans-serif`;
+    ctx.fillText(title, this.width / 2, modal.y + 32 * modal.scale);
+    this.drawButton(modal.close, "#7f715f", "X");
+
+    ctx.fillStyle = item.color;
+    ctx.beginPath();
+    ctx.arc(this.width / 2, modal.y + 98 * modal.scale, 34 * modal.scale, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#ffffff";
+    ctx.font = `bold ${24 * modal.scale}px sans-serif`;
+    ctx.fillText(item.icon, this.width / 2, modal.y + 107 * modal.scale);
+    ctx.fillStyle = item.color;
+    ctx.font = `bold ${16 * modal.scale}px sans-serif`;
+    ctx.fillText(`${item.rarityName} · ${item.name}`, this.width / 2, modal.y + 156 * modal.scale);
+    ctx.fillStyle = "#5a4637";
+    ctx.font = `${13 * modal.scale}px sans-serif`;
+    ctx.fillText(`${item.slotName}装备`, this.width / 2, modal.y + 178 * modal.scale);
+    ctx.fillStyle = item.setColor;
+    ctx.font = `bold ${12 * modal.scale}px sans-serif`;
+    ctx.fillText(item.setName, this.width / 2, modal.y + 199 * modal.scale);
+    ctx.fillStyle = "#8b6d4b";
+    ctx.font = `bold ${11 * modal.scale}px sans-serif`;
+    ctx.fillText(oldItem ? `当前：${oldItem.rarityName} · ${oldItem.name}` : "当前：该部位尚未装备", this.width / 2, modal.y + 220 * modal.scale);
+    this.drawStatCompareLine("气血", oldItem ? oldItem.hp : 0, item.hp, modal.y + 242 * modal.scale, modal.scale);
+    this.drawStatCompareLine("攻击", oldItem ? oldItem.atk : 0, item.atk, modal.y + 263 * modal.scale, modal.scale);
+    this.drawStatCompareLine("速度", oldItem ? oldItem.spd : 0, item.spd, modal.y + 284 * modal.scale, modal.scale);
+    ctx.fillStyle = "#8d5f86";
+    ctx.font = `bold ${11 * modal.scale}px sans-serif`;
+    ctx.fillText(oldItem ? `词条：${oldItem.traitName} +${oldItem.traitValue}% → ${item.traitName} +${item.traitValue}%` : `词条：${item.traitName} +${item.traitValue}%`, this.width / 2, modal.y + 305 * modal.scale);
+    ctx.fillStyle = comparison.powerDelta >= 0 ? "#26894f" : "#bc4b45";
+    ctx.font = `bold ${12 * modal.scale}px sans-serif`;
+    ctx.fillText(`妖力：${comparison.currentPower} → ${item.power}  (${this.formatDelta(comparison.powerDelta)})`, this.width / 2, modal.y + 329 * modal.scale);
+    this.drawButton(modal.sell, "#9b6b3f", labels.sell);
+    this.drawButton(modal.stash, "#7f715f", labels.stash);
+    this.drawButton(modal.equip, "#3c9063", labels.equip);
+  }
+
+  getLootActionAt(x, y) {
+    const modal = this.getModalLayout();
+    if (this.contains(modal.close, x, y)) return "close";
+    if (this.contains(modal.sell, x, y)) return "sell";
+    if (this.contains(modal.stash, x, y)) return "stash";
+    if (this.contains(modal.equip, x, y)) return "equip";
+    return "";
+  }
+
+  getInspectActionAt(x, y, source) {
+    const action = this.getLootActionAt(x, y);
+    if (action === "close") return "close";
+    if (source === "inventory" && action === "stash") return "stash";
+    return action;
+  }
+
+  getQuickDrawItemIndexAt(x, y, resultCount) {
+    const cards = this.getQuickDrawLayout().resultCards.slice(0, Math.min(resultCount, 6));
+    return cards.findIndex((rect) => this.contains(rect, x, y));
+  }
+
+  renderInventory(profile, page = 0) {
+    this.renderHome(profile, "");
+    const ctx = this.ctx;
+    const modal = this.getInventoryLayout();
+    const items = profile.getInventory();
+    const totalPages = Math.max(1, Math.ceil(items.length / 6));
+    const pageIndex = Math.max(0, Math.min(totalPages - 1, page));
+    const view = items.slice(pageIndex * 6, pageIndex * 6 + 6);
+    this.drawModalShell(modal, "玩家背包");
+    ctx.fillStyle = "#765a42";
+    ctx.font = "12px sans-serif";
+    ctx.fillText(`已存放 ${items.length} 件装备`, this.width / 2, modal.y + 72);
+    if (!view.length) {
+      ctx.fillStyle = "#5b4939";
+      ctx.font = "bold 15px sans-serif";
+      ctx.fillText("背包还是空的", this.width / 2, modal.y + 180);
+    }
+    view.forEach((item, index) => {
+      const rect = modal.rows[index];
+      this.fillPanel(rect, item.rarity === "legend" ? "rgba(255, 210, 80, 0.18)" : "rgba(91, 73, 57, 0.08)", 7);
+      ctx.strokeStyle = item.color;
+      ctx.strokeRect(rect.x, rect.y, rect.width, rect.height);
+      ctx.textAlign = "left";
+      ctx.fillStyle = item.color;
+      ctx.font = "bold 15px sans-serif";
+      ctx.fillText(item.icon, rect.x + 12, rect.y + 24);
+      ctx.fillStyle = "#4b3827";
+      ctx.font = "bold 12px sans-serif";
+      ctx.fillText(item.name, rect.x + 40, rect.y + 18);
+      ctx.fillStyle = "#816d5d";
+      ctx.font = "10px sans-serif";
+      ctx.fillText(`${item.rarityName} · ${item.slotName} · 妖力 ${item.power}`, rect.x + 40, rect.y + 34);
+    });
+    ctx.textAlign = "center";
+    ctx.fillStyle = "#8b6d4b";
+    ctx.font = "12px sans-serif";
+    ctx.fillText(`${pageIndex + 1} / ${totalPages}`, this.width / 2, modal.y + modal.height - 91);
+    this.drawButton(modal.previous, "#7f715f", "上一页");
+    this.drawButton(modal.close, "#9b6b3f", "关闭");
+    this.drawButton(modal.next, "#477fa8", "下一页");
+  }
+
+  getInventoryLayout() {
+    const width = Math.min(356, this.width - 24);
+    const height = Math.min(458, this.layout.safeBottom - this.layout.contentTop - 22);
+    const x = (this.width - width) / 2;
+    const y = this.layout.contentTop + (this.layout.safeBottom - this.layout.contentTop - height) / 2;
+    const rowGap = 8;
+    const rowHeight = 46;
+    const buttonGap = 8;
+    const buttonWidth = (width - 40 - buttonGap * 2) / 3;
+    const buttonY = y + height - 67;
+    return {
+      x, y, width, height,
+      headerHeight: 50,
+      rows: Array.from({ length: 6 }, (_, index) => ({
+        x: x + 16,
+        y: y + 92 + index * (rowHeight + rowGap),
+        width: width - 32,
+        height: rowHeight
+      })),
+      previous: { x: x + 12, y: buttonY, width: buttonWidth, height: 45 },
+      close: { x: x + 12 + buttonWidth + buttonGap, y: buttonY, width: buttonWidth, height: 45 },
+      next: { x: x + 12 + (buttonWidth + buttonGap) * 2, y: buttonY, width: buttonWidth, height: 45 }
+    };
+  }
+
+  getInventoryItemIndexAt(x, y, profile, page = 0) {
+    const items = profile.getInventory().slice(page * 6, page * 6 + 6);
+    return this.getInventoryLayout().rows.slice(0, items.length).findIndex((rect) => this.contains(rect, x, y));
+  }
+
+  isInventoryPrevButton(x, y) {
+    return this.contains(this.getInventoryLayout().previous, x, y);
+  }
+
+  isInventoryNextButton(x, y) {
+    return this.contains(this.getInventoryLayout().next, x, y);
+  }
+
+  isInventoryCloseButton(x, y) {
+    return this.contains(this.getInventoryLayout().close, x, y);
+  }
+
+  renderSignIn(profile, rewards, todayKey) {
+    this.renderHome(profile, "");
+    const ctx = this.ctx;
+    const modal = this.getSignInLayout();
+    this.drawModalShell(modal, "30日签到");
+    ctx.fillStyle = "#765a42";
+    ctx.font = "12px sans-serif";
+    ctx.fillText(`今日 ${todayKey} · 已签到 ${profile.signInClaimedDays}/${rewards.length}`, this.width / 2, modal.y + 72);
+    rewards.forEach((reward, index) => {
+      const rect = modal.cells[index];
+      const claimed = index < profile.signInClaimedDays;
+      const current = index === profile.signInClaimedDays;
+      this.fillPanel(rect, claimed ? "rgba(60, 144, 99, 0.22)" : current ? "rgba(255, 210, 80, 0.2)" : "rgba(91, 73, 57, 0.08)", 6);
+      ctx.strokeStyle = claimed ? "#3c9063" : current ? "#d29a38" : "rgba(118, 90, 66, 0.24)";
+      ctx.strokeRect(rect.x, rect.y, rect.width, rect.height);
+      ctx.textAlign = "center";
+      ctx.fillStyle = claimed ? "#317d54" : "#5b4939";
+      ctx.font = "bold 11px sans-serif";
+      ctx.fillText(`第${reward.day}天`, rect.x + rect.width / 2, rect.y + 16);
+      ctx.font = "10px sans-serif";
+      this.drawWrappedText(reward.label, rect.x + 6, rect.y + 30, rect.width - 12, 11);
+    });
+    this.drawButton(modal.claim, profile.signInClaimedDays >= rewards.length || profile.signInLastDate === todayKey ? "#6f6a61" : "#3c9063", profile.signInClaimedDays >= rewards.length ? "已领完" : profile.signInLastDate === todayKey ? "今日已签" : "领取今日奖励");
+    this.drawButton(modal.close, "#7f715f", "关闭");
+  }
+
+  getSignInLayout() {
+    const width = Math.min(356, this.width - 24);
+    const height = Math.min(520, this.layout.safeBottom - this.layout.contentTop - 18);
+    const x = (this.width - width) / 2;
+    const y = this.layout.contentTop + (this.layout.safeBottom - this.layout.contentTop - height) / 2;
+    const cellGap = 6;
+    const cellWidth = (width - 44 - cellGap * 4) / 5;
+    const cellHeight = 42;
+    return {
+      x, y, width, height,
+      headerHeight: 50,
+      cells: Array.from({ length: 30 }, (_, index) => ({
+        x: x + 16 + (index % 5) * (cellWidth + cellGap),
+        y: y + 92 + Math.floor(index / 5) * (cellHeight + cellGap),
+        width: cellWidth,
+        height: cellHeight
+      })),
+      claim: { x: x + 20, y: y + height - 64, width: width - 120, height: 43 },
+      close: { x: x + width - 88, y: y + height - 64, width: 68, height: 43 }
+    };
+  }
+
+  isSignInClaimButton(x, y) {
+    return this.contains(this.getSignInLayout().claim, x, y);
+  }
+
+  isSignInCloseButton(x, y) {
+    return this.contains(this.getSignInLayout().close, x, y);
+  }
+
+  isInventoryButton(x, y) {
+    return this.contains(this.layout.utilities.inventory, x, y);
+  }
+
+  isSignInButton(x, y) {
+    return this.contains(this.layout.signIn, x, y);
   }
 }
 

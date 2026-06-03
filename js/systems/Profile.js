@@ -17,6 +17,7 @@ class Profile {
     this.cultivation = saved.cultivation || 0;
     this.stage = saved.stage || 1;
     this.equipment = saved.equipment || {};
+    this.inventory = Array.isArray(saved.inventory) ? saved.inventory : [];
     this.discovered = saved.discovered || {};
     this.exploreEnergy = saved.exploreEnergy === undefined ? 5 : saved.exploreEnergy;
     this.exploreCount = saved.exploreCount || 0;
@@ -26,6 +27,8 @@ class Profile {
     this.pvpWins = saved.pvpWins || 0;
     this.pvpLosses = saved.pvpLosses || 0;
     this.rankScore = saved.rankScore === undefined ? 1000 : saved.rankScore;
+    this.signInClaimedDays = saved.signInClaimedDays || 0;
+    this.signInLastDate = saved.signInLastDate || "";
     this.isMaxTestAccount = typeof wx !== "undefined" && typeof wx.getCurrentAccount === "function" && wx.getCurrentAccount() === "tester_max";
     if (this.isMaxTestAccount) this.applyMaxTestPreset();
   }
@@ -160,6 +163,39 @@ class Profile {
   equip(item) {
     this.equipment[item.slot] = item;
     this.discover(item);
+  }
+
+  addToInventory(item) {
+    if (!item) return false;
+    this.inventory.push(item);
+    this.discover(item);
+    return true;
+  }
+
+  getInventory() {
+    return [...this.inventory].sort((left, right) => (right.power || 0) - (left.power || 0));
+  }
+
+  takeInventoryItem(id) {
+    const index = this.inventory.findIndex((item) => item.id === id);
+    if (index < 0) return null;
+    return this.inventory.splice(index, 1)[0];
+  }
+
+  sellInventoryItem(id) {
+    const item = this.takeInventoryItem(id);
+    if (!item) return null;
+    this.coins += item.price || 0;
+    return item;
+  }
+
+  equipFromInventory(id) {
+    const item = this.takeInventoryItem(id);
+    if (!item) return null;
+    const oldItem = this.getEquipped(item.slot);
+    if (oldItem) this.addToInventory(oldItem);
+    this.equip(item);
+    return { item, oldItem };
   }
 
   getEquipped(slot) {
@@ -317,6 +353,7 @@ class Profile {
       cultivation: this.cultivation,
       stage: this.stage,
       equipment: this.equipment,
+      inventory: this.inventory,
       discovered: this.discovered,
       exploreEnergy: this.exploreEnergy,
       exploreCount: this.exploreCount,
@@ -327,7 +364,9 @@ class Profile {
       ,
       pvpWins: this.pvpWins,
       pvpLosses: this.pvpLosses,
-      rankScore: this.rankScore
+      rankScore: this.rankScore,
+      signInClaimedDays: this.signInClaimedDays,
+      signInLastDate: this.signInLastDate
     };
   }
 

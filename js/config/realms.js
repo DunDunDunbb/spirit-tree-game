@@ -14,4 +14,3 @@ function getRealm(cultivation) {
 }
 
 module.exports = { REALMS, getRealm };
-

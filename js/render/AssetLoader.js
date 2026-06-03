@@ -4,6 +4,7 @@ const IMAGE_PATHS = {
   "scene-bamboo": "assets/images/scenes/bamboo.jpg",
   "scene-canyon": "assets/images/scenes/canyon.jpg",
   "scene-snow": "assets/images/scenes/snow.jpg",
+  "scene-aurora": "assets/images/scenes/aurora.png",
   tree: "assets/images/spirit-tree.png",
   "enemy-imp": "assets/images/enemies/imp.png",
   "enemy-brute": "assets/images/enemies/brute.png",
@@ -17,13 +18,25 @@ const IMAGE_PATHS = {
   "boss-abyss-seer": "assets/images/bosses/abyss-seer.png",
   "boss-sun-crow": "assets/images/bosses/sun-crow.png",
   "boss-vine-queen": "assets/images/bosses/vine-queen.png",
+  "boss-eclipse-monarch": "assets/images/bosses/eclipse-monarch.png",
   "hero-main-character": "assets/images/heroes/main-character.png",
   "hero-skin-streetwear": "assets/images/heroes/skins/streetwear.png",
   "hero-skin-wuxia": "assets/images/heroes/skins/wuxia.png",
   "hero-skin-royal": "assets/images/heroes/skins/royal.png",
   "hero-skin-bunny": "assets/images/heroes/skins/bunny.png",
   "hero-skin-nurse": "assets/images/heroes/skins/nurse.png",
-  "hero-skin-bocchi-shirt": "assets/images/heroes/skins/bocchi-shirt.png"
+  "hero-skin-bocchi-shirt": "assets/images/heroes/skins/bocchi-shirt.png",
+  "hero-skin-samurai": "assets/images/heroes/skins/samurai.png",
+  "hero-skin-cyberpunk": "assets/images/heroes/skins/cyberpunk.png",
+  "hero-skin-frost-king": "assets/images/heroes/skins/frost-king.png",
+  "hero-skin-magma-warlord": "assets/images/heroes/skins/magma-warlord.png",
+  "hero-skin-jade-monk": "assets/images/heroes/skins/jade-monk.png",
+  "hero-skin-desert-pharaoh": "assets/images/heroes/skins/desert-pharaoh.png",
+  "hero-skin-jungle-guardian": "assets/images/heroes/skins/jungle-guardian.png",
+  "hero-skin-steampunk": "assets/images/heroes/skins/steampunk.png",
+  "hero-skin-star-priest": "assets/images/heroes/skins/star-priest.png",
+  "hero-skin-sakura-festival": "assets/images/heroes/skins/sakura-festival.png",
+  "hero-skin-deep-sea-captain": "assets/images/heroes/skins/deep-sea-captain.png"
 };
 
 class AssetLoader {

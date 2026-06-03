@@ -139,7 +139,18 @@ function Copy-WebDirectory([string]$relativePath) {
   "assets/images/heroes/skins/royal.png",
   "assets/images/heroes/skins/bunny.png",
   "assets/images/heroes/skins/nurse.png",
-  "assets/images/heroes/skins/bocchi-shirt.png"
+  "assets/images/heroes/skins/bocchi-shirt.png",
+  "assets/images/heroes/skins/samurai.png",
+  "assets/images/heroes/skins/cyberpunk.png",
+  "assets/images/heroes/skins/frost-king.png",
+  "assets/images/heroes/skins/magma-warlord.png",
+  "assets/images/heroes/skins/jade-monk.png",
+  "assets/images/heroes/skins/desert-pharaoh.png",
+  "assets/images/heroes/skins/jungle-guardian.png",
+  "assets/images/heroes/skins/steampunk.png",
+  "assets/images/heroes/skins/star-priest.png",
+  "assets/images/heroes/skins/sakura-festival.png",
+  "assets/images/heroes/skins/deep-sea-captain.png"
 ) | ForEach-Object { Copy-WebFile $_ }
 
 @(

@@ -58,7 +58,18 @@
     royal: { sprite: "hero-skin-royal", color: "#ffd86b" },
     bunny: { sprite: "hero-skin-bunny", color: "#e5b8ff" },
     nurse: { sprite: "hero-skin-nurse", color: "#ff9fb0" },
-    "bocchi-shirt": { sprite: "hero-skin-bocchi-shirt", color: "#ff9bc3" }
+    "bocchi-shirt": { sprite: "hero-skin-bocchi-shirt", color: "#ff9bc3" },
+    samurai: { sprite: "hero-skin-samurai", color: "#d64b43" },
+    cyberpunk: { sprite: "hero-skin-cyberpunk", color: "#1ce3ff" },
+    "frost-king": { sprite: "hero-skin-frost-king", color: "#9fe7ff" },
+    "magma-warlord": { sprite: "hero-skin-magma-warlord", color: "#ff7a3c" },
+    "jade-monk": { sprite: "hero-skin-jade-monk", color: "#55d69c" },
+    "desert-pharaoh": { sprite: "hero-skin-desert-pharaoh", color: "#d8b15b" },
+    "jungle-guardian": { sprite: "hero-skin-jungle-guardian", color: "#6fc56f" },
+    steampunk: { sprite: "hero-skin-steampunk", color: "#c48d57" },
+    "star-priest": { sprite: "hero-skin-star-priest", color: "#b6a7ff" },
+    "sakura-festival": { sprite: "hero-skin-sakura-festival", color: "#ff8fb4" },
+    "deep-sea-captain": { sprite: "hero-skin-deep-sea-captain", color: "#3fc9d8" }
   };
 
   function getAvatar(profile = {}) {

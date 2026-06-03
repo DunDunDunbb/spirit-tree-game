@@ -1,9 +1,9 @@
 const SLOTS = [
-  { id: "weapon", name: "武器", icon: "剑" },
-  { id: "armor", name: "衣甲", icon: "甲" },
+  { id: "weapon", name: "武器", icon: "刃" },
+  { id: "armor", name: "护甲", icon: "甲" },
   { id: "ring", name: "戒指", icon: "戒" },
-  { id: "boots", name: "灵靴", icon: "靴" },
-  { id: "talisman", name: "法宝", icon: "宝" },
+  { id: "boots", name: "靴子", icon: "靴" },
+  { id: "talisman", name: "法宝", icon: "符" },
   { id: "jade", name: "灵玉", icon: "玉" }
 ];
 
@@ -18,36 +18,18 @@ const RARITIES = [
 const SETS = [
   { id: "cloud", name: "流云套装", color: "#82d8ff" },
   { id: "thunder", name: "苍雷套装", color: "#b69cff" },
-  { id: "flame", name: "赤霞套装", color: "#ff9c68" },
+  { id: "flame", name: "赤焰套装", color: "#ff9c68" },
   { id: "moon", name: "月影套装", color: "#c8b8ff" },
   { id: "spring", name: "灵泉套装", color: "#8ce0ae" }
 ];
 
 const EQUIPMENT_CATALOG = {
-  weapon: [
-    "青锋问道剑", "流云逐月刃", "玄铁镇妖刀", "苍雷惊鸿枪", "赤霞焚心剑", "月影无痕匕",
-    "灵泉听雨剑", "星河落尘杖", "归墟断岳斧", "太虚照夜戟", "扶摇破风弓", "九霄御雷剑"
-  ],
-  armor: [
-    "青岚护心袍", "流云鹤氅", "玄铁镇山甲", "苍雷鳞衣", "赤霞焚天铠", "月影夜行衣",
-    "灵泉长生袍", "星河璇玑甲", "归墟玄武铠", "太虚无垢衣", "扶摇轻羽衫", "九霄云纹甲"
-  ],
-  ring: [
-    "青木纳灵戒", "流云藏风戒", "玄铁定岳环", "苍雷引电戒", "赤霞离火戒", "月影匿踪环",
-    "灵泉回春戒", "星河照命环", "归墟噬灵戒", "太虚须弥环", "扶摇御风戒", "九霄紫电环"
-  ],
-  boots: [
-    "青岚踏叶靴", "流云追月履", "玄铁镇岳靴", "苍雷逐电履", "赤霞焚风靴", "月影无声履",
-    "灵泉渡水靴", "星河踏斗履", "归墟破浪靴", "太虚凌空履", "扶摇乘风靴", "九霄登云履"
-  ],
-  talisman: [
-    "青木养魂葫", "流云八卦镜", "玄铁镇妖塔", "苍雷引劫铃", "赤霞离火珠", "月影摄魂灯",
-    "灵泉净心瓶", "星河璇玑盘", "归墟吞海印", "太虚乾坤扇", "扶摇御风旗", "九霄雷纹鼓"
-  ],
-  jade: [
-    "青木长生玉", "流云自在珏", "玄铁镇心佩", "苍雷惊蛰玉", "赤霞暖阳珏", "月影幽梦佩",
-    "灵泉回春玉", "星河照命珏", "归墟玄冥佩", "太虚无相玉", "扶摇清风珏", "九霄紫霄佩"
-  ]
+  weapon: ["青锋问道剑", "流云逐月刃", "玄铁镇妖刀", "苍雷惊鸿枪", "赤焰焚心剑", "月影无痕匕", "灵泉听雨剑", "星河落尘杖", "归墟断岳斧", "太虚照夜戟", "扶摇破风弓", "九霄御雷剑"],
+  armor: ["青岚护心袍", "流云鹤氅", "玄铁镇山甲", "苍雷耀衣", "赤焰焚天铠", "月影夜行衣", "灵泉长生袍", "星河琉璃甲", "归墟玄武铠", "太虚无垢衣", "扶摇轻羽衣", "九霄云纹甲"],
+  ring: ["青木纳灵戒", "流云藏风戒", "玄铁定岳环", "苍雷引电戒", "赤焰离火戒", "月影匿踪环", "灵泉回春戒", "星河照命环", "归墟噬灵戒", "太虚须弥环", "扶摇御风戒", "九霄紫电环"],
+  boots: ["青岚踏叶靴", "流云追月履", "玄铁镇岳靴", "苍雷逐电履", "赤焰踏风靴", "月影无声履", "灵泉渡水靴", "星河踏斗履", "归墟破浪靴", "太虚凌空履", "扶摇乘风靴", "九霄登云履"],
+  talisman: ["青木养魂符", "流云八卦盘", "玄铁镇妖塔", "苍雷引劫印", "赤焰离火珠", "月影摄魂灯", "灵泉净心瓶", "星河琉璃镜", "归墟吞海印", "太虚镇坛幡", "扶摇御风幡", "九霄雷纹鼎"],
+  jade: ["青木长生玉", "流云自在珮", "玄铁镇心佩", "苍雷惊蛰玉", "赤焰暖阳珏", "月影幽梦佩", "灵泉回春玉", "星河照命珏", "归墟玄冥佩", "太虚无相玉", "扶摇清风珮", "九霄紫霄佩"]
 };
 
 const TRAITS = [
@@ -101,12 +83,7 @@ function getSynthesisCandidate(items) {
     if (!product) return;
     const score = product.power + materials.reduce((total, item) => total + getItemPower(item), 0) * 0.05;
     if (!best || score > best.score) {
-      best = {
-        slot,
-        materials,
-        product,
-        score
-      };
+      best = { slot, materials, product, score };
     }
   });
   return best;
@@ -184,6 +161,45 @@ function createEquipment(treeLevel) {
   return item;
 }
 
+function createFixedEquipment(options = {}) {
+  const slotId = options.slot;
+  const slot = SLOTS.find((entry) => entry.id === slotId);
+  if (!slot) return null;
+  const catalog = EQUIPMENT_CATALOG[slot.id] || [];
+  const catalogIndex = Math.max(0, Math.min(catalog.length - 1, Number(options.catalogIndex) || 0));
+  const rarity = RARITIES.find((entry) => entry.id === options.rarity) || RARITIES[RARITY_INDEX.legend];
+  const set = SETS.find((entry) => entry.id === options.setId) || SETS[catalogIndex % SETS.length];
+  const trait = TRAITS.find((entry) => entry.id === options.trait) || TRAITS[catalogIndex % TRAITS.length];
+  const treeLevel = Math.max(1, Number(options.treeLevel) || 12);
+  const base = Math.max(1, Math.round((4 + treeLevel * 1.72) * rarity.factor));
+  const traitValue = Math.max(1, Math.round((3 + treeLevel * 0.45) * rarity.factor));
+  const item = {
+    id: options.id || `${slot.id}-reward-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    catalogId: options.catalogId || `${slot.id}-${catalogIndex}`,
+    slot: slot.id,
+    slotName: slot.name,
+    icon: slot.icon,
+    rarity: rarity.id,
+    rarityName: rarity.name,
+    color: rarity.color,
+    name: options.name || catalog[catalogIndex],
+    setId: set.id,
+    setName: set.name,
+    setColor: set.color,
+    trait: trait.id,
+    traitName: trait.name,
+    traitValue: options.traitValue || traitValue,
+    hp: options.hp || (slot.id === "armor" || slot.id === "jade" ? base * 6 : base * 3),
+    atk: options.atk || (slot.id === "weapon" || slot.id === "talisman" ? base * 3 : Math.round(base * 1.2)),
+    spd: options.spd || (slot.id === "boots" || slot.id === "ring" ? Math.max(1, Math.round(base)) : Math.max(1, Math.round(base * 0.45))),
+    price: options.price || Math.max(8, Math.round(base * rarity.factor * 1.8)),
+    enhanceLevel: Math.max(0, Number(options.enhanceLevel) || 0),
+    style: options.style || ""
+  };
+  item.power = getItemPower(item);
+  return item;
+}
+
 function getCatalogTotal() {
   return Object.values(EQUIPMENT_CATALOG).reduce((total, names) => total + names.length, 0);
 }
@@ -195,6 +211,7 @@ module.exports = {
   TRAITS,
   EQUIPMENT_CATALOG,
   createEquipment,
+  createFixedEquipment,
   getItemPower,
   getCatalogTotal,
   getSynthesisCandidate,

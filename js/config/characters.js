@@ -1,11 +1,8 @@
 const { getSkillById } = require("./skills");
 
-/**
- * 唯一主角的数值、立绘和默认技能配置。
- */
 const MAIN_CHARACTER = {
   id: "main-character",
-  name: "红色主角",
+  name: "红衣主角",
   hp: 120,
   atk: 18,
   spd: 175,
